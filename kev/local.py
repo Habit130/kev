@@ -250,38 +250,68 @@ def artifact_problems(kind, path):
     return problems
 
 
+REQUIRED = {
+    "checkpoint": ("head.pt", "adapter_config.json", "adapter_model.safetensors", "tokenizer.json", "tokenizer_config.json"),
+    "base": ("config.json", "model.safetensors.index.json", "tokenizer.json"),
+}
+
+
+def _selected(registry, task_id):
+    """The logical model ids to verify: one task's model, or every model when no task was named."""
+    if task_id is None:
+        return sorted(registry.models)
+    return [registry.task(task_id).model]
+
+
 def require_artifact(kind, path):
     problems = artifact_problems(kind, path)
     if problems:
         raise LocalConfigError(f"incomplete local acquisition: " + "; ".join(problems))
 
 
-def verify_artifacts(registry, receipt):
-    """Re-check every payload of this registry's artifacts against an acquisition receipt (the one the acquisition run
+def verify_artifacts(registry, receipt, task_id=None):
+    """Re-check every payload of a registry's artifacts against an acquisition receipt (the one the acquisition run
     writes), so a directory swapped after acquisition cannot be served while claiming the pinned source and revision.
-    -> {logical id: {filename: sha256}}.
+    -> {logical id: {filename: sha256}}. `task_id` limits it to that task's model, which is what the entry points verify.
+
+    The receipt must cover every file a load depends on (`REQUIRED`, plus every base weight shard the index names): a
+    receipt that omits a file cannot vouch for it, so an omitted `head.pt` or shard is a refusal, not a pass. The base
+    revision compared is the *effective* one (`head.pt`'s `base_revision`, which resolve() uses when the registry leaves
+    the base revision out), so a base acquired from another commit cannot pass against a different reported pin.
 
     This is opt-in (`kev.task --receipt`, `kev.serve --receipt`) because it re-reads every weight file. The default
     configured path trusts the acquisition-time verification, and every `source`/`revision` it reports is labelled a
     `pin`: the declaration the artifact was *acquired and verified* against, not a hash of the bytes read now."""
     from .suite import digest
     receipt = json.loads(Path(receipt).read_text(encoding="utf-8"))
+    effective = {model_id: resolved_meta(Checkpoint(str(registry.model(model_id).checkpoint.path)), registry.model(model_id).base)[1]
+                 for model_id in _selected(registry, task_id)}
     checked = {}
-    for model_id, model in registry.models.items():
+    for model_id in _selected(registry, task_id):
+        model = registry.model(model_id)
         for kind, entry in (("checkpoint", model.checkpoint), ("base", model.base)):
             record = receipt.get(f"{model_id}.{kind}")
             if record is None:   # an id-keyed receipt (the shape a per-artifact acquisition writes) is accepted too
-                for key, value in receipt.items():
+                for value in receipt.values():
                     if isinstance(value, dict) and value.get("dest") and Path(value["dest"]) == entry.path:
                         record = value
                         break
             if record is None:
                 raise LocalConfigError(f"{receipt}: no receipt entry for {kind} {entry.path}; acquire the artifact with "
                                        f"a recorded receipt before asking to verify it")
+            required = set(REQUIRED[kind]) | _index_shards(entry.path)
+            present = {name for name in required if (entry.path / name).is_file()}
+            if missing := sorted(required - present):
+                raise LocalConfigError(f"{receipt}: {kind} {entry.path} does not hold {missing}; there is nothing to verify")
+            if uncovered := sorted(required - set(record.get("sha256") or {})):
+                raise LocalConfigError(f"{receipt}: the {kind} entry does not record {uncovered}, so it cannot vouch for "
+                                       f"every file a load reads; record the complete payload")
             if record.get("repo") and record["repo"] != entry.source:
                 raise LocalConfigError(f"{receipt}: {kind} receipt says {record['repo']!r} but the registry pins {entry.source!r}")
-            if record.get("revision") and entry.revision and record["revision"] != entry.revision:
-                raise LocalConfigError(f"{receipt}: {kind} receipt says revision {record['revision']} but the registry pins {entry.revision}")
+            revision = entry.revision if kind == "checkpoint" else (effective[model_id] or entry.revision)
+            if record.get("revision") and revision and record["revision"] != revision:
+                raise LocalConfigError(f"{receipt}: {kind} receipt says revision {record['revision']} but this checkpoint "
+                                       f"is pinned to {revision}")
             for name, want in sorted(record["sha256"].items()):
                 path = entry.path / name
                 if not path.is_file():
@@ -289,9 +319,21 @@ def verify_artifacts(registry, receipt):
                 got = digest(path)
                 if got != want:
                     raise LocalConfigError(f"{kind} {path}: sha256 is {got}, the receipt records {want}; "
-                                           f"refusing to serve this artifact as {entry.source}@{entry.revision}")
+                                           f"refusing to serve this artifact as {entry.source}@{revision or 'unpinned'}")
                 checked.setdefault(f"{model_id}.{kind}", {})[name] = got
     return checked
+
+
+def _index_shards(path):
+    """The weight shards a base directory's index names: the files a load of that base will read."""
+    index = Path(path) / "model.safetensors.index.json"
+    if not index.is_file():
+        return set()
+    try:
+        weight_map = json.loads(index.read_text(encoding="utf-8")).get("weight_map", {})
+    except json.JSONDecodeError:
+        return set()
+    return set(weight_map.values())
 
 
 def resolve(registry, task_id):

@@ -73,7 +73,8 @@ def artifact(root, kind, name, **files):
     from kev.checkpoint import Meta, write_meta
     d = root / kind / name
     d.mkdir(parents=True, exist_ok=True)
-    body = {"config.json": json.dumps({"model_type": "qwen3_5", "layer_types": ["linear_attention"]})}
+    body = {"config.json": json.dumps({"model_type": "qwen3_5", "layer_types": ["linear_attention"]}),
+            "tokenizer.json": json.dumps({"version": "1.0"}), "tokenizer_config.json": json.dumps({"model_max_length": 8})}
     if kind == "base":
         body["model.safetensors.index.json"] = json.dumps({"metadata": {}, "weight_map": {"w": "model.safetensors"}})
     body.update(files)
@@ -317,19 +318,19 @@ def test_receipt_verification_matches_the_acquired_bytes(tmp_path):
     from kev.suite import write_json
     path, ck, base = registry_file(tmp_path)
     reg = load_registry(path)
-    payloads = {"kev-local.checkpoint": (ck / "adapter_model.safetensors", "acme/kev-local", "a" * 40),
-                "kev-local.base": (base / "model.safetensors", "Qwen/Qwen3.5-0.8B-Base", BASE_SHA)}
+    payloads = {"kev-local.checkpoint": (ck, "acme/kev-local", "a" * 40),
+                "kev-local.base": (base, "Qwen/Qwen3.5-0.8B-Base", BASE_SHA)}
     receipt = tmp_path / "receipt.json"
     write_json(receipt, {key: {"repo": repo, "revision": rev,
-                               "sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()}}
-                         for key, (p, repo, rev) in payloads.items()})
+                               "sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(d.iterdir())}}
+                         for key, (d, repo, rev) in payloads.items()})
     checked = verify_artifacts(reg, receipt)
     assert set(checked) == {"kev-local.checkpoint", "kev-local.base"}
-    payloads["kev-local.base"][0].write_bytes(b"\x01" * 8)      # the same filename, different weights
+    (payloads["kev-local.base"][0] / "model.safetensors").write_bytes(b"\x01" * 8)   # the same filename, different weights
     with pytest.raises(LocalConfigError, match="refusing to serve this artifact as Qwen/Qwen3.5-0.8B-Base"):
         verify_artifacts(reg, receipt)
-    payloads["kev-local.base"][0].unlink()
-    with pytest.raises(LocalConfigError, match="records it as acquired"):
+    (payloads["kev-local.base"][0] / "model.safetensors").unlink()
+    with pytest.raises(LocalConfigError, match="does not hold"):
         verify_artifacts(reg, receipt)
 
 
@@ -343,14 +344,26 @@ def test_receipt_verification_refuses_a_missing_or_contradictory_entry(tmp_path)
     write_json(empty, {})
     with pytest.raises(LocalConfigError, match="no receipt entry for checkpoint"):
         verify_artifacts(reg, empty)
-    digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()   # noqa: E731
+    def complete(directory):
+        return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(directory.iterdir())}
+
+    incomplete = tmp_path / "incomplete.json"
+    write_json(incomplete, {"kev-local.checkpoint": {"repo": "acme/kev-local", "revision": "a" * 40,
+                                                     "sha256": {"adapter_model.safetensors": complete(ck)["adapter_model.safetensors"]}},
+                            "kev-local.base": {"repo": "Qwen/Qwen3.5-0.8B-Base", "revision": BASE_SHA,
+                                               "sha256": complete(base)}})
+    with pytest.raises(LocalConfigError, match="does not record .*head.pt"):
+        verify_artifacts(reg, incomplete)
     wrong = tmp_path / "wrong.json"
-    write_json(wrong, {"kev-local.checkpoint": {"repo": "someone/else", "revision": "a" * 40,
-                                                "sha256": {"adapter_model.safetensors": digest(ck / "adapter_model.safetensors")}},
-                       "kev-local.base": {"repo": "Qwen/Qwen3.5-0.8B-Base", "revision": BASE_SHA,
-                                          "sha256": {"model.safetensors": digest(base / "model.safetensors")}}})
+    write_json(wrong, {"kev-local.checkpoint": {"repo": "someone/else", "revision": "a" * 40, "sha256": complete(ck)},
+                       "kev-local.base": {"repo": "Qwen/Qwen3.5-0.8B-Base", "revision": BASE_SHA, "sha256": complete(base)}})
     with pytest.raises(LocalConfigError, match="but the registry pins 'acme/kev-local'"):
         verify_artifacts(reg, wrong)
+    stale = tmp_path / "stale-base-revision.json"
+    write_json(stale, {"kev-local.checkpoint": {"repo": "acme/kev-local", "revision": "a" * 40, "sha256": complete(ck)},
+                       "kev-local.base": {"repo": "Qwen/Qwen3.5-0.8B-Base", "revision": "b" * 40, "sha256": complete(base)}})
+    with pytest.raises(LocalConfigError, match="is pinned to " + BASE_SHA):
+        verify_artifacts(reg, stale, task_id="task-a")   # the effective revision comes from head.pt
 
 
 # --- batch inputs --------------------------------------------------------------------------------------------------
@@ -460,18 +473,22 @@ def test_a_failed_run_leaves_an_existing_output_directory_intact(tmp_path):
     class Boom(Exception):
         pass
 
+    paths = (out / "rows.jsonl", out / "answers.jsonl", out / "task.json")
     with pytest.raises(Boom):
-        with _AtomicOutputs(out / "rows.jsonl", out / "answers.jsonl") as (rows, answers):
+        with _AtomicOutputs(*paths) as (rows, answers, summary):
             rows.write('{"row": 2, "state": "new"}\n')          # a later chunk got this far
             answers.write('{"row": 2}\n')
+            summary.write('{"task": "new"}')
             raise Boom("the forward pass failed")
     assert {p.name: p.read_bytes() for p in sorted(out.iterdir())} == previous
     assert not [p for p in out.iterdir() if p.name.startswith(".")], "temp files must be discarded"
 
-    with _AtomicOutputs(out / "rows.jsonl", out / "answers.jsonl") as (rows, answers):   # a clean run publishes
+    with _AtomicOutputs(*paths) as (rows, answers, summary):   # a clean run publishes all three together
         rows.write('{"row": 9, "state": "published"}\n')
         answers.write('{"row": 9}\n')
+        summary.write('{"task": "new"}')
     assert [json.loads(line)["row"] for line in (out / "rows.jsonl").read_text(encoding="utf-8").splitlines()] == [9]
+    assert json.loads((out / "task.json").read_text(encoding="utf-8"))["task"] == "new"
     assert not [p for p in out.iterdir() if p.name.startswith(".")]
 
 

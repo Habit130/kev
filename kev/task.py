@@ -78,7 +78,7 @@ def run(config, task_id, input_path, out_dir, limit=None, opts=None, device=None
     """Resolve the task once, load its checkpoint, and answer every input row with it. -> the run summary dict."""
     registry = load_registry(config)
     resolved = resolve(registry, task_id)
-    verified = verify_artifacts(registry, receipt) if receipt else None
+    verified = verify_artifacts(registry, receipt, task_id=task_id) if receipt else None
     states = read_states(input_path)
     if limit is not None:
         states = states[:limit]
@@ -94,13 +94,13 @@ def run(config, task_id, input_path, out_dir, limit=None, opts=None, device=None
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    rows_path, answers_path = out / "rows.jsonl", out / "answers.jsonl"
+    rows_path, answers_path, summary_path = out / "rows.jsonl", out / "answers.jsonl", out / "task.json"
     started = time.time()
     latencies = []
-    # Both row files are written to sibling temp files and moved into place only once every row is answered, so a run
-    # that fails on a later chunk (an over-length state, an out-of-memory pass) leaves the previous run's outputs and
-    # summary exactly as they were rather than a mix of partial new rows and stale metadata (_AtomicOutputs).
-    with _AtomicOutputs(rows_path, answers_path) as (rows_file, answers_file):
+    # All three outputs are staged as sibling temp files and published together only after every row is answered, so a
+    # run that fails on a later chunk (an over-length state, an out-of-memory pass) leaves the previous run's directory
+    # exactly as it was, and a reader never sees new rows beside the previous run's summary (_AtomicOutputs).
+    with _AtomicOutputs(rows_path, answers_path, summary_path) as (rows_file, answers_file, summary_file):
         for chunk in _batches(states, batch):
             reqs = [(number, state, task_request(resolved, state)) for number, state in chunk]
             # the canonical serving admission: a state over the serving context is refused (422-equivalent) here,
@@ -123,27 +123,26 @@ def run(config, task_id, input_path, out_dir, limit=None, opts=None, device=None
                 answers_file.write(json.dumps({"row": number, **body}, ensure_ascii=False) + "\n")
         if not latencies:
             raise LocalConfigError(f"{input_path}: no state was answered; {out} was left as it was")
-    peak_bytes, memory_definition = _device_memory(dev, model)
-    summary = {
-        "task": resolved.task.id, "model_id": resolved.model.id,
-        "identity": resolved.card(backend=model.backend, dtype=model.dtype, device=dev, verified=verified),
-        "device": dev, "backend": model.backend, "dtype": model.dtype,
-        "temperature": model.head.temperature,
-        "input": str(input_path), "rows": len(states), "output": str(out),
-        "latency_ms": latencies, "wall_ms": round((time.time() - started) * 1000, 1),
-        "latency_definition": "per batch: wall clock around the device-synchronised forward pass (no queue wait)",
-        "peak_device_bytes": peak_bytes, "memory_definition": memory_definition,
-    }
-    # the summary last: a reader never sees a summary that describes rows that are not there yet
-    (out / "task.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"wrote {rows_path} ({len(states)} rows) and {out / 'task.json'}", flush=True)
+        peak_bytes, memory_definition = _device_memory(dev, model)
+        summary = {
+            "task": resolved.task.id, "model_id": resolved.model.id,
+            "identity": resolved.card(backend=model.backend, dtype=model.dtype, device=dev, verified=verified),
+            "device": dev, "backend": model.backend, "dtype": model.dtype,
+            "temperature": model.head.temperature,
+            "input": str(input_path), "rows": len(states), "output": str(out),
+            "latency_ms": latencies, "wall_ms": round((time.time() - started) * 1000, 1),
+            "latency_definition": "per batch: wall clock around the device-synchronised forward pass (no queue wait)",
+            "peak_device_bytes": peak_bytes, "memory_definition": memory_definition,
+        }
+        summary_file.write(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
+    print(f"wrote {rows_path} ({len(states)} rows) and {summary_path}", flush=True)
     return summary
 
 
 class _AtomicOutputs:
-    """`with _AtomicOutputs(rows_path, answers_path) as (rows, answers):` — write to temp files, publish both on a clean
-    exit, discard them on any exception (including KeyboardInterrupt). Each publish is one os.replace, so a reader
-    never sees a half-written file."""
+    """`with _AtomicOutputs(*paths) as handles:` — write to sibling temp files, publish every file on a clean exit
+    (one os.replace each, rows before the summary, because the caller passes them in that order), discard them on any
+    exception including KeyboardInterrupt. A reader therefore sees either the previous run's set or the new one."""
 
     def __init__(self, *paths):
         self.paths = [Path(p) for p in paths]
