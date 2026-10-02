@@ -1,5 +1,6 @@
 """Decision model: causal LM backbone + block-causal branch mask + pointer readout."""
 import copy, math, os, re
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -59,6 +60,19 @@ class ContextOverflow(ValueError):
 
 def load_tokenizer(name, revision=None):
     return AutoTokenizer.from_pretrained(name, revision=revision)
+
+
+def base_identity(name):
+    """The public repository a base was pinned to, from the name a checkpoint recorded. `save_pretrained` writes the local
+    directory it was saved into, so a path is unwound through the Hub cache layout back to `org/model`; a Hub id is
+    already its own identity, and anything else (a plain directory name) is returned as it stands."""
+    name = str(name)
+    if not os.path.isdir(name):
+        return name
+    for part in reversed(Path(name).resolve().parts):
+        if part.startswith("models--"):
+            return part[len("models--"):].replace("--", "/", 1)
+    return Path(name).name
 
 
 def pad_id(tok):

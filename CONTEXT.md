@@ -36,6 +36,13 @@ frozen issues under the fork's governance, not an inherited unattended-session b
 Local account names, endpoints, model-cache locations, and explicitly authorized external
 knowledge locations belong in ignored `.local/agent-context.md`. Never record credentials.
 
+## Local use
+
+`docs/local-inference.md` is the authoritative guide to configured local mode: project-local
+tooling setup, the shared-base / project-checkpoint storage split, the machine-local task registry,
+the batch and serving entry points, their failure behavior, and the constraints. Committed examples
+live in `examples/local-inference/`; machine paths and receipts stay in ignored `.local/`.
+
 ## Language
 
 | Canonical term | Meaning |

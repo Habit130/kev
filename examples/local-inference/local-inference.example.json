@@ -1,0 +1,68 @@
+{
+  "schema": "kev-local-inference/1",
+  "project_root": "/absolute/path/to/this/checkout",
+  "models": {
+    "kev-0.8b": {
+      "checkpoint": {
+        "path": ".local/models/jaredpalmer/kev-0.8b",
+        "source": "jaredpalmer/kev-0.8b",
+        "revision": "bf75a6a8848ea6960ff2ed108d9ed44c2941174f"
+      },
+      "base": {
+        "path": "/absolute/path/to/your/shared/models/Qwen/Qwen3.5-0.8B-Base",
+        "source": "Qwen/Qwen3.5-0.8B-Base",
+        "revision": "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68"
+      }
+    },
+    "kev-4b": {
+      "checkpoint": {
+        "path": ".local/models/jaredpalmer/kev-4b",
+        "source": "jaredpalmer/kev-4b",
+        "revision": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52"
+      },
+      "base": {
+        "path": "/absolute/path/to/your/shared/models/Qwen/Qwen3.5-4B-Base",
+        "source": "Qwen/Qwen3.5-4B-Base",
+        "revision": "1001bb4d826a52d1f399e183466143f4da7b741b"
+      }
+    }
+  },
+  "question_sets": {
+    "support-triage": {
+      "department": {
+        "type": "choice",
+        "instructions": "Which team should handle this ticket?",
+        "criteria": {
+          "returns": "Exchanges, refunds, wrong or damaged items",
+          "shipping": "Delivery status, delays, lost packages",
+          "billing": "Charges, invoices, payment problems"
+        }
+      },
+      "needs_manager": {
+        "type": "noul",
+        "instructions": "Does this ticket need a manager to review it?",
+        "criteria": {
+          "true": "The customer asks for a person, or the problem is still unresolved after earlier attempts",
+          "false": "A first-line agent can resolve this from the standard policy"
+        }
+      },
+      "urgency": {
+        "type": "score",
+        "instructions": "How urgent is this ticket?",
+        "criteria": ["can wait", "this week", "today"]
+      }
+    }
+  },
+  "tasks": {
+    "support-triage-0.8b": {
+      "description": "Validation and simple tasks (Kev-0.8B)",
+      "model": "kev-0.8b",
+      "include": "support-triage"
+    },
+    "support-triage-4b": {
+      "description": "Primary preset (Kev-4B): the same three states and the same questions, a larger model",
+      "model": "kev-4b",
+      "include": "support-triage"
+    }
+  }
+}
