@@ -173,9 +173,12 @@ and move to the next arm. Do not wait for a human.
 
 ## 6. Resilience
 
-- **State file** `runs/<session>-state.json` (runs/ is gitignored; `git add -f` it on the research branch): baseline and
-  authorization, spend readings with UTC times, every study with its spawn ids, bound and status, reads launched and
-  pulled, candidates, PRs, pending decisions. Update it after every launch, pull and read, and commit it with the PLAN section.
+- **Local state record** in ignored `.local/agent-context.md`: baseline and authorization,
+  spend readings with UTC times, every study with its spawn ids, bound and status, reads
+  launched and pulled, candidates, PRs, pending decisions. Update it after every launch,
+  pull and read. Never force-add or commit this live record. Generated spawn/watch/launch
+  ledgers under `runs/` remain local too; use the committed spec and redacted reports for
+  durable research provenance, not machine/cloud instance identifiers.
 - **Detached jobs.** Studies spawn on the deployed app and survive the local client; a local error after `study` may still
   have spawned trials, so run `modal container list` before relaunching, and never relaunch under the same study name.
   Probes and benchmarks run with `--detach`.
@@ -204,10 +207,13 @@ At the end of the session (and in the state file as it goes):
 
 - Each round's PLAN.md section carries its registration, read-out table, confirmation results and verdict, negative or not,
   with report paths.
-- Update PLAN.md "Where we stand" (released and confirmed candidates, running jobs, spend) and "What we have learned" if a
-  finding changed; add each round to the Record table.
-- A session summary in PLAN.md: spend (baseline, final reading, running bounds), what is pending on Modal with the exact
-  commands to finish it, incidents, and at most three next steps with their evidence.
+- Update PLAN.md "Where we stand" with released/confirmed candidates and redacted work
+  status, and "What we have learned" if a finding changed; add each round to the Record table.
+- A public session summary in PLAN.md records outcomes, reviewed aggregate spend, incidents,
+  and next steps with checkpoint/suite/spec/report provenance. Keep live spend readings,
+  exact machine/cloud completion commands, account/app/call identifiers, resource instances,
+  and absolute machine paths in ignored local context. Review new reports for the same
+  boundary before committing; initialization does not rewrite existing research evidence.
 - Every number carries checkpoint, suite and partition, n and report path; commit the read-outs and verdicts the numbers
   come from (`.gitignore` keeps reports, not prediction dumps; add a rule for new read-out directories).
 - Clock stamps: registration and result times are commit times. Do not write a time into a heading before it happens;
