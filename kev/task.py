@@ -23,7 +23,7 @@ from pathlib import Path
 from .api import SystemOneRequest, output_tokens, to_answers, to_record
 from .checkpoint import LoadOptions
 from .device import allocated_bytes, default_device, sync
-from .local import LocalConfigError, load_registry, resolve
+from .local import LocalConfigError, load_registry, resolve, verify_artifacts
 from .model import admit
 
 BATCH_ROWS = 8   # input rows per forward pass (a pass holds every row's state at once, so keep it small on a laptop)
@@ -73,10 +73,11 @@ def _device_memory(device, model):
                   if peak else f"{device}: the counter reported 0 bytes (nothing device-resident was measured)")
 
 
-def run(config, task_id, input_path, out_dir, limit=None, opts=None, device=None, batch=BATCH_ROWS):
+def run(config, task_id, input_path, out_dir, limit=None, opts=None, device=None, batch=BATCH_ROWS, receipt=None):
     """Resolve the task once, load its checkpoint, and answer every input row with it. -> the run summary dict."""
     registry = load_registry(config)
     resolved = resolve(registry, task_id)
+    verified = verify_artifacts(registry, receipt) if receipt else None
     states = read_states(input_path)
     if limit is not None:
         states = states[:limit]
@@ -122,7 +123,7 @@ def run(config, task_id, input_path, out_dir, limit=None, opts=None, device=None
     peak_bytes, memory_definition = _device_memory(dev, model)
     summary = {
         "task": resolved.task.id, "model_id": resolved.model.id,
-        "identity": resolved.card(backend=model.backend, dtype=model.dtype, device=dev),
+        "identity": resolved.card(backend=model.backend, dtype=model.dtype, device=dev, verified=verified),
         "device": dev, "backend": model.backend, "dtype": model.dtype,
         "temperature": model.head.temperature,
         "input": str(input_path), "rows": len(states), "output": str(out),
@@ -148,11 +149,12 @@ def main(argv=None):
     ap.add_argument("--out", required=True, help="output directory (rows.jsonl, answers.jsonl, task.json)")
     ap.add_argument("--limit", type=int, default=None, help="answer only the first N rows (smoke checks)")
     ap.add_argument("--batch", type=int, default=BATCH_ROWS, help=f"input rows per forward pass, at least 1 (default {BATCH_ROWS})")
+    ap.add_argument("--receipt", default=None, help="acquisition receipt JSON: re-hash every payload against it before loading")
     a = ap.parse_args(argv)
     if a.batch < 1 or (a.limit is not None and a.limit < 1):
         ap.error("--batch and --limit must be at least 1")
     try:
-        run(a.config, a.task, a.input, a.out, limit=a.limit, batch=a.batch)
+        run(a.config, a.task, a.input, a.out, limit=a.limit, batch=a.batch, receipt=a.receipt)
     except LocalConfigError as exc:
         print(f"local inference error: {exc}", file=sys.stderr)
         return 2

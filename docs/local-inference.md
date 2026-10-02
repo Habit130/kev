@@ -136,6 +136,12 @@ is refused instead of honoured. The run writes three files into `--out`:
 `--batch N` sizes the rows per forward pass (default 8). Rows are independent: batching changes speed
 and memory, never an answer.
 
+`--receipt <acquisition-receipt.json>` re-hashes every payload against the acquisition record before
+loading and writes the checked digests into `task.json`. Without it, the reported `pin` values are the
+declarations the artifact was *acquired and verified* against (registry entry, required to agree with
+the checkpoint's own `head.pt`) rather than a hash of the bytes read now; use the receipt when the
+storage is not trusted to be unchanged since acquisition.
+
 ## Serving one task
 
 ```bash
@@ -145,6 +151,9 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
     --host 127.0.0.1 --port 8009
 ```
 
+`--receipt <acquisition-receipt.json>` verifies the payload digests again at startup, and a
+configured startup that fails exits nonzero with `local inference error: ...` on stderr.
+
 The task is resolved once at startup and its checkpoint is the only one served. Wait for readiness,
 then confirm what is actually loaded instead of trusting the alias:
 
@@ -153,8 +162,10 @@ curl -s localhost:8009/v1/models | python3 -m json.tool
 ```
 
 `/v1/models` reports the task, the checkpoint and base **paths**, the pinned `source` and `revision`
-of each, the device, the backend (MLX on Apple Silicon for these hybrid bases), the dtype, and the
-serving temperature. `run` keeps the local path, and the request's `model` field stays an alias.
+of each under `pin`, the device, the backend (MLX on Apple Silicon for these hybrid bases), the dtype,
+and the serving temperature. `run` keeps the local path, and the request's `model` field stays an
+alias. `pin_source` says what those values are, and `verified_sha256` carries the digests re-hashed in
+this process when `--receipt` was given (`null` otherwise).
 
 Legacy startup is unchanged when `--config`/`--task` are absent:
 

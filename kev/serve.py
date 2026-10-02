@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 from .api import SystemOneRequest, to_record, to_answers, output_tokens, with_date_facts
 from .checkpoint import Checkpoint, LoadOptions, fused_available, is_hub_id
 from .device import default_device, empty_cache, out_of_memory, sync
-from .local import LocalConfigError, load_registry, resolve
+from .local import LocalConfigError, load_registry, resolve, verify_artifacts
 from .model import SERVE_MAX_STATE, ContextOverflow, admit
 
 PREFIX_CACHE_SIZE = int(os.environ.get("KEV_PREFIX_CACHE", "4"))          # states kept (KV + DeltaNet states; attention-only backbones also the state's hidden states); 0 disables
@@ -118,6 +118,7 @@ class Server:
     release_date: str = field(default="")   # for the TypeSafe model card; resolved once (may ask the Hub)
     truncate_states: bool = field(default_factory=lambda: TRUNCATE_STATES)   # KEV_TRUNCATE_STATES; off: an over-length state is refused (kev.model.admit)
     local: object = None   # kev.local.Resolved when the server was started from a task preset; None = legacy --run startup
+    verified: object = None   # payloads re-hashed against an acquisition receipt at startup, when --receipt was given
 
     def __post_init__(self):
         self.release_date = self.release_date or self.checkpoint.release_date()
@@ -323,7 +324,7 @@ def models():
                              "misses": s.prefix_cache.misses, "cached_states": len(s.prefix_cache.entries), "oom_retries": s.prefix_cache.oom_retries},
             "batches": {"count": s.batches, "requests": s.batched_requests, "queued": s.queue.qsize()}}
     if s.local is not None:
-        card["local"] = s.local.card(backend=s.model.backend, dtype=s.model.dtype, device=s.device)
+        card["local"] = s.local.card(backend=s.model.backend, dtype=s.model.dtype, device=s.device, verified=s.verified)
     return {"models": [{"name": name, **card} for name in MODEL_NAMES]}
 
 
@@ -333,6 +334,7 @@ def main():
     ap.add_argument("--fallback", default="runs/smoke")
     ap.add_argument("--config", default=None, help="machine-local JSON registry (kev.local); needs --task")
     ap.add_argument("--task", default=None, help="task id declared in that config; selects the checkpoint for this server")
+    ap.add_argument("--receipt", default=None, help="acquisition receipt JSON: re-hash every payload against it before loading")
     ap.add_argument("--host", default="127.0.0.1", help="interface to bind; 0.0.0.0 to serve beyond this machine (a container, a VM behind a proxy)")
     ap.add_argument("--port", type=int, default=8008)
     a = ap.parse_args()
@@ -341,10 +343,12 @@ def main():
             ap.error("--config and --task are used together; a configured server serves exactly one task's checkpoint")
         if a.run != ap.get_default("run"):
             ap.error("--run and --config/--task are mutually exclusive: a configured server takes its checkpoint from the task")
-    resolved = None
+    resolved = verified = None
     if a.task:
         try:
-            resolved = resolve(load_registry(a.config), a.task)
+            registry = load_registry(a.config)
+            resolved = resolve(registry, a.task)
+            verified = verify_artifacts(registry, a.receipt) if a.receipt else None
         except LocalConfigError as exc:
             print(f"local inference error: {exc}", file=sys.stderr)
             return 2
@@ -369,7 +373,7 @@ def main():
         print(f"local inference error: {exc}", file=sys.stderr)
         return 2
     if fused_default and not opts.fused and model.hybrid: print("fused Qwen3.5 kernels off: install the flash-linear-attention version kev/fused_qwen35.py pins (FLA_VERSION) to turn them on")
-    app.state.server = Server(ck, tok, model, dev, local=resolved)
+    app.state.server = Server(ck, tok, model, dev, local=resolved, verified=verified)
     print(f"serving {ck.requested} ({ck.path}) on {dev} via {model.backend} ({model.dtype}) {a.host}:{a.port}; states over {SERVE_MAX_STATE:,} tokens "
           f"{'truncated (KEV_TRUNCATE_STATES=1)' if app.state.server.truncate_states else 'refused (422)'}")   # /v1/models reports the run as given, not the resolved cache path
     if resolved is not None:
@@ -381,4 +385,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())   # a configured startup failure returns 2; without SystemExit the exit status would be 0

@@ -245,6 +245,44 @@ def require_artifact(kind, path):
         raise LocalConfigError(f"incomplete local acquisition: " + "; ".join(problems))
 
 
+def verify_artifacts(registry, receipt):
+    """Re-check every payload of this registry's artifacts against an acquisition receipt (the one the acquisition run
+    writes), so a directory swapped after acquisition cannot be served while claiming the pinned source and revision.
+    -> {logical id: {filename: sha256}}.
+
+    This is opt-in (`kev.task --receipt`, `kev.serve --receipt`) because it re-reads every weight file. The default
+    configured path trusts the acquisition-time verification, and every `source`/`revision` it reports is labelled a
+    `pin`: the declaration the artifact was *acquired and verified* against, not a hash of the bytes read now."""
+    from .suite import digest
+    receipt = json.loads(Path(receipt).read_text(encoding="utf-8"))
+    checked = {}
+    for model_id, model in registry.models.items():
+        for kind, entry in (("checkpoint", model.checkpoint), ("base", model.base)):
+            record = receipt.get(f"{model_id}.{kind}")
+            if record is None:   # an id-keyed receipt (the shape a per-artifact acquisition writes) is accepted too
+                for key, value in receipt.items():
+                    if isinstance(value, dict) and value.get("dest") and Path(value["dest"]) == entry.path:
+                        record = value
+                        break
+            if record is None:
+                raise LocalConfigError(f"{receipt}: no receipt entry for {kind} {entry.path}; acquire the artifact with "
+                                       f"a recorded receipt before asking to verify it")
+            if record.get("repo") and record["repo"] != entry.source:
+                raise LocalConfigError(f"{receipt}: {kind} receipt says {record['repo']!r} but the registry pins {entry.source!r}")
+            if record.get("revision") and entry.revision and record["revision"] != entry.revision:
+                raise LocalConfigError(f"{receipt}: {kind} receipt says revision {record['revision']} but the registry pins {entry.revision}")
+            for name, want in sorted(record["sha256"].items()):
+                path = entry.path / name
+                if not path.is_file():
+                    raise LocalConfigError(f"{kind} {path} is missing, but {receipt} records it as acquired")
+                got = digest(path)
+                if got != want:
+                    raise LocalConfigError(f"{kind} {path}: sha256 is {got}, the receipt records {want}; "
+                                           f"refusing to serve this artifact as {entry.source}@{entry.revision}")
+                checked.setdefault(f"{model_id}.{kind}", {})[name] = got
+    return checked
+
+
 def resolve(registry, task_id):
     """A configured task -> its checkpoint, its exact base, and the LoadOptions that keep both local.
 
@@ -280,13 +318,20 @@ class Resolved:
     def load_options(self, opts=LoadOptions()):
         return load_options(opts, self.base_path)
 
-    def card(self, backend=None, dtype=None, device=None):
-        """The identity a client can check: the actual checkpoint, base, sources and revisions — not the request alias."""
+    def card(self, backend=None, dtype=None, device=None, verified=None):
+        """What is actually loaded: the resolved local paths, and for each artifact the `pin` it was acquired and
+        verified against — the registry declaration plus the checkpoint's own `head.pt`, checked to agree, not a
+        hash of the bytes read now (that is what verify_artifacts does, on request). `verified` records the
+        filenames re-hashed in this process, when the caller asked for that."""
+        pin = self.model.checkpoint
         return {
             "task": self.task.id,
             "model_id": self.model.id,
-            "checkpoint": {"path": str(self.checkpoint.path), "source": self.model.checkpoint.source,
-                           "revision": self.model.checkpoint.revision, "requested": self.checkpoint.requested},
-            "base": {"path": str(self.base_path), "source": self.base_source, "revision": self.base_revision},
+            "checkpoint": {"path": str(self.checkpoint.path), "requested": self.checkpoint.requested,
+                           "pin": {"source": pin.source, "revision": pin.revision}},
+            "base": {"path": str(self.base_path),
+                     "pin": {"source": self.base_source, "revision": self.base_revision}},
+            "pin_source": "registry entry, required to agree with the checkpoint's own head.pt; bytes re-hashed only when a receipt was given",
+            "verified_sha256": verified,
             "backend": backend, "dtype": dtype, "device": device,
         }

@@ -246,8 +246,9 @@ def test_resolved_carries_both_local_paths_and_the_pinned_identity(tmp_path, mon
     assert Path(resolved.checkpoint.path) == ck and resolved.base_path == base
     assert resolved.base_source == "Qwen/Qwen3.5-0.8B-Base" and resolved.base_revision == BASE_SHA
     card = resolved.card()
-    assert card["checkpoint"]["source"] == "acme/kev-local" and card["base"]["source"] == "Qwen/Qwen3.5-0.8B-Base"
-    assert card["base"]["path"] == str(base)
+    assert card["checkpoint"]["pin"] == {"source": "acme/kev-local", "revision": "a" * 40}
+    assert card["base"]["pin"] == {"source": "Qwen/Qwen3.5-0.8B-Base", "revision": BASE_SHA}
+    assert card["base"]["path"] == str(base) and card["verified_sha256"] is None
     opts = resolved.load_options(LoadOptions())
     assert opts.base_path == base   # the loader gets the directory; head.pt keeps the identity
     no_network.check()
@@ -278,6 +279,50 @@ def test_a_legacy_load_options_is_untouched_by_local_mode():
     assert load_options(opts).base_path is None
     assert load_options(opts, "/some/base").base_path == Path("/some/base")
     assert load_options(opts, "/some/base").merge is False
+
+
+def test_receipt_verification_matches_the_acquired_bytes(tmp_path):
+    """--receipt re-hashes every payload, so the pins a card reports are the bytes actually on disk (Codex P2 on #4:
+    without this, a swapped artifact with the expected filenames still resolves and claims the official pin)."""
+    import hashlib
+    from kev.local import verify_artifacts
+    from kev.suite import write_json
+    path, ck, base = registry_file(tmp_path)
+    reg = load_registry(path)
+    payloads = {"kev-local.checkpoint": (ck / "adapter_model.safetensors", "acme/kev-local", "a" * 40),
+                "kev-local.base": (base / "model.safetensors", "Qwen/Qwen3.5-0.8B-Base", BASE_SHA)}
+    receipt = tmp_path / "receipt.json"
+    write_json(receipt, {key: {"repo": repo, "revision": rev,
+                               "sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()}}
+                         for key, (p, repo, rev) in payloads.items()})
+    checked = verify_artifacts(reg, receipt)
+    assert set(checked) == {"kev-local.checkpoint", "kev-local.base"}
+    payloads["kev-local.base"][0].write_bytes(b"\x01" * 8)      # the same filename, different weights
+    with pytest.raises(LocalConfigError, match="refusing to serve this artifact as Qwen/Qwen3.5-0.8B-Base"):
+        verify_artifacts(reg, receipt)
+    payloads["kev-local.base"][0].unlink()
+    with pytest.raises(LocalConfigError, match="records it as acquired"):
+        verify_artifacts(reg, receipt)
+
+
+def test_receipt_verification_refuses_a_missing_or_contradictory_entry(tmp_path):
+    import hashlib
+    from kev.local import verify_artifacts
+    from kev.suite import write_json
+    path, ck, base = registry_file(tmp_path)
+    reg = load_registry(path)
+    empty = tmp_path / "empty.json"
+    write_json(empty, {})
+    with pytest.raises(LocalConfigError, match="no receipt entry for checkpoint"):
+        verify_artifacts(reg, empty)
+    digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()   # noqa: E731
+    wrong = tmp_path / "wrong.json"
+    write_json(wrong, {"kev-local.checkpoint": {"repo": "someone/else", "revision": "a" * 40,
+                                                "sha256": {"adapter_model.safetensors": digest(ck / "adapter_model.safetensors")}},
+                       "kev-local.base": {"repo": "Qwen/Qwen3.5-0.8B-Base", "revision": BASE_SHA,
+                                          "sha256": {"model.safetensors": digest(base / "model.safetensors")}}})
+    with pytest.raises(LocalConfigError, match="but the registry pins 'acme/kev-local'"):
+        verify_artifacts(reg, wrong)
 
 
 # --- batch inputs --------------------------------------------------------------------------------------------------
@@ -458,9 +503,8 @@ def test_integration_batch_cli_answers_the_synthetic_states(tmp_path):
         assert set(probs) == {"0", "1", "2"} and 0.0 <= answers["urgency"]["score"] <= 2.0
         assert abs(sum(probs.values()) - 1.0) < 0.03 and all(0.0 <= v <= 1.0 for v in probs.values())
     summary = json.loads((tmp_path / "task.json").read_text(encoding="utf-8"))
-    assert summary["identity"]["checkpoint"]["source"] == "jaredpalmer/kev-0.8b"
-    assert summary["identity"]["base"]["source"] == "Qwen/Qwen3.5-0.8B-Base"
-    assert summary["identity"]["base"]["revision"] == BASE_SHA
+    assert summary["identity"]["checkpoint"]["pin"]["source"] == "jaredpalmer/kev-0.8b"
+    assert summary["identity"]["base"]["pin"] == {"source": "Qwen/Qwen3.5-0.8B-Base", "revision": BASE_SHA}
 
 
 @pytest.mark.integration
