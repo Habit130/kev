@@ -48,7 +48,9 @@ def write_ref(ref, revision, alias_main=False):
     """huggingface_hub reads refs/<revision> with a bare `f.read()` and does NOT strip it, so the commit goes in with no
     trailing newline: a newline here would make the cache miss and the offline resolver would try the network.
     `alias_main` also points the default `main` ref at this same pinned commit, which is what upstream-style test code
-    that asks for a repository without a revision needs; the pinned commit stays the identity either way."""
+    that asks for a repository without a revision needs; the pinned commit stays the identity either way. refs/ is
+    created here: a manual cache move can preserve snapshots/ and drop refs/, and every caller must repair that."""
+    ref.parent.mkdir(parents=True, exist_ok=True)
     ref.write_text(revision, encoding="utf-8")
     if alias_main:
         (ref.parent / "main").write_text(revision, encoding="utf-8")
@@ -56,7 +58,8 @@ def write_ref(ref, revision, alias_main=False):
 
 def link(cache, repo, target, revision, replace=False, alias_main=False):
     """-> ("created" | "kept" | "mismatch"). Idempotent: a snapshot that already points at these originals is left alone,
-    and one that points elsewhere is reported unless --replace was given."""
+    and one that points elsewhere is reported unless --replace was given. A kept snapshot still (re)writes its refs, so
+    rerunning with --alias-main takes effect and a missing refs/ is repaired."""
     root = repo_dir(cache, repo)
     snapshot, ref = root / "snapshots" / revision, root / "refs" / revision
     wanted = {p.name: p.resolve() for p in payloads(target)}
@@ -64,12 +67,11 @@ def link(cache, repo, target, revision, replace=False, alias_main=False):
     if snapshot.exists() and present is None:
         raise ValueError(f"{snapshot} exists and is not a directory; refusing to touch it")
     if present == wanted:
-        ref.write_text(revision, encoding="utf-8")   # refs/ can be missing after a manual cache move
+        write_ref(ref, revision, alias_main=alias_main)
         return "kept"
     if present is not None and not replace:
         return "mismatch"
     (root / "snapshots").mkdir(parents=True, exist_ok=True)
-    (root / "refs").mkdir(parents=True, exist_ok=True)
     snapshot.mkdir(parents=True, exist_ok=True)
     for name, source in wanted.items():
         side = snapshot / name

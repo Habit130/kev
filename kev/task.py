@@ -15,6 +15,7 @@ Nothing here downloads anything: the registry must already point at complete loc
 """
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import replace
@@ -93,18 +94,20 @@ def run(config, task_id, input_path, out_dir, limit=None, opts=None, device=None
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    rows_path = out / "rows.jsonl"
-    answers_path = out / "answers.jsonl"
+    rows_path, answers_path = out / "rows.jsonl", out / "answers.jsonl"
     started = time.time()
     latencies = []
-    with rows_path.open("w", encoding="utf-8") as rows_file, answers_path.open("w", encoding="utf-8") as answers_file:
+    # Both row files are written to sibling temp files and moved into place only once every row is answered, so a run
+    # that fails on a later chunk (an over-length state, an out-of-memory pass) leaves the previous run's outputs and
+    # summary exactly as they were rather than a mix of partial new rows and stale metadata (_AtomicOutputs).
+    with _AtomicOutputs(rows_path, answers_path) as (rows_file, answers_file):
         for chunk in _batches(states, batch):
             reqs = [(number, state, task_request(resolved, state)) for number, state in chunk]
-            # the canonical serving admission: a state over the serving context is refused (422-equivalent) here, never
-            # silently truncated; each record is encoded once and the same encodings are scored.
+            # the canonical serving admission: a state over the serving context is refused (422-equivalent) here,
+            # never silently truncated; each record is encoded once and the same encodings are scored.
             encs = [(admit(model, tok, rec), meta) for rec, meta in (to_record(req) for _, _, req in reqs)]
             # no prefix cache in batch mode: one pass per batch (None/False per row), every row the same questions
-            # about its own state. The per-row lists must match encs: both backends zip them and would answer nothing.
+            # about its own state. The per-row lists must match encs: both backends zip and would answer nothing.
             sync(dev)
             t = time.time()
             probs = model.probs_batch([enc for enc, _ in encs], [None] * len(encs), [False] * len(encs))[0]
@@ -118,8 +121,8 @@ def run(config, task_id, input_path, out_dir, limit=None, opts=None, device=None
                         "latency_ms": latency_ms}
                 rows_file.write(json.dumps({"row": number, "state": state, "answers": answers}, ensure_ascii=False) + "\n")
                 answers_file.write(json.dumps({"row": number, **body}, ensure_ascii=False) + "\n")
-    if not latencies:
-        raise LocalConfigError(f"{input_path}: no state was answered; nothing was written to {out}")
+        if not latencies:
+            raise LocalConfigError(f"{input_path}: no state was answered; {out} was left as it was")
     peak_bytes, memory_definition = _device_memory(dev, model)
     summary = {
         "task": resolved.task.id, "model_id": resolved.model.id,
@@ -131,9 +134,37 @@ def run(config, task_id, input_path, out_dir, limit=None, opts=None, device=None
         "latency_definition": "per batch: wall clock around the device-synchronised forward pass (no queue wait)",
         "peak_device_bytes": peak_bytes, "memory_definition": memory_definition,
     }
+    # the summary last: a reader never sees a summary that describes rows that are not there yet
     (out / "task.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"wrote {rows_path} ({len(states)} rows) and {out / 'task.json'}", flush=True)
     return summary
+
+
+class _AtomicOutputs:
+    """`with _AtomicOutputs(rows_path, answers_path) as (rows, answers):` — write to temp files, publish both on a clean
+    exit, discard them on any exception (including KeyboardInterrupt). Each publish is one os.replace, so a reader
+    never sees a half-written file."""
+
+    def __init__(self, *paths):
+        self.paths = [Path(p) for p in paths]
+        self.tmp = [p.with_name(f".{p.name}.partial") for p in self.paths]
+        self.handles = []
+
+    def __enter__(self):
+        self.handles = [p.open("w", encoding="utf-8") for p in self.tmp]
+        return tuple(self.handles)
+
+    def __exit__(self, exc_type, exc, tb):
+        for handle in self.handles:
+            handle.close()
+        self.handles = []
+        if exc_type is None:
+            for tmp, final in zip(self.tmp, self.paths):
+                os.replace(tmp, final)
+        else:
+            for tmp in self.tmp:
+                tmp.unlink(missing_ok=True)
+        return False   # never swallow the exception
 
 
 def _batches(items, size):

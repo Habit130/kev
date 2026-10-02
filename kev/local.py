@@ -33,6 +33,7 @@ backend choice. Nothing writes to `head.pt`, `config.json` or `adapter_config.js
 """
 import json
 import os
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -41,6 +42,7 @@ from .model import is_hybrid
 
 SCHEMA = "kev-local-inference/1"
 MODE_ENV = "KEV_LOCAL_INFERENCE_CONFIG"
+COMMIT = re.compile(r"[0-9a-f]{40}")   # a full lowercase commit; a branch or tag is not a pin (issue #3: acquire by commit)
 
 
 class LocalConfigError(ValueError):
@@ -106,7 +108,7 @@ class Registry:
         return self.question_sets[task.include] if task.include is not None else task.questions
 
 
-def _entry(where, what, root):
+def _entry(where, what, root, require_revision):
     if not isinstance(where, dict):
         raise LocalConfigError(f"{what} must be an object with 'path' (and 'source'/'revision' pins), got {type(where).__name__}")
     unknown = sorted(set(where) - {"path", "source", "revision"})
@@ -121,6 +123,12 @@ def _entry(where, what, root):
     revision = where.get("revision")
     if revision is not None and not isinstance(revision, str):
         raise LocalConfigError(f"{what}: 'revision' must be a string when given")
+    if revision is not None and COMMIT.fullmatch(revision) is None:
+        raise LocalConfigError(f"{what}: 'revision' must be a full commit ({COMMIT.pattern}); {revision!r} is a mutable "
+                               f"branch or tag, and a pin that can move is not an identity")
+    if revision is None and require_revision:
+        raise LocalConfigError(f"{what}: 'revision' is required here. Nothing else records this checkpoint's own commit "
+                               f"(head.pt records its base, not itself), so without it no pin can be reported")
     resolved = Path(path)
     if not resolved.is_absolute():
         if root is None:
@@ -159,8 +167,11 @@ def load_registry(path):
             raise LocalConfigError(f"{what}: unknown keys {unknown}; expected checkpoint, base, description")
         if "checkpoint" not in spec or "base" not in spec:
             raise LocalConfigError(f"{what}: both 'checkpoint' and 'base' are required")
-        models[model_id] = ModelEntry(id=model_id, checkpoint=_entry(spec["checkpoint"], f"{what}.checkpoint", root),
-                                      base=_entry(spec["base"], f"{what}.base", root))
+        # the checkpoint needs its own pin (nothing else records it); the base's may be omitted, because head.pt
+        # carries the base revision the checkpoint was trained on and resolve() uses that instead.
+        models[model_id] = ModelEntry(id=model_id,
+                                      checkpoint=_entry(spec["checkpoint"], f"{what}.checkpoint", root, require_revision=True),
+                                      base=_entry(spec["base"], f"{what}.base", root, require_revision=False))
     question_sets_raw = body.get("question_sets") or {}
     if not isinstance(question_sets_raw, dict):
         raise LocalConfigError(f"{path}: 'question_sets' must be an object when given")

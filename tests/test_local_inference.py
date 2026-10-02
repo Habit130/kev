@@ -20,6 +20,7 @@ skipping every case, so CI selection excludes them with `-k 'not integration'`.
 """
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -153,6 +154,33 @@ def test_task_naming_an_undefined_model_is_refused(tmp_path):
     path.write_text(json.dumps(body), encoding="utf-8")
     with pytest.raises(LocalConfigError, match="not defined in 'models'"):
         load_registry(path)
+
+
+def test_checkpoint_revision_is_required_and_must_be_a_commit(tmp_path):
+    """Codex P2 on #4: nothing records a checkpoint's own commit, so without a real one no pin can be reported."""
+    path, _, _ = registry_file(tmp_path)
+    body = json.loads(path.read_text(encoding="utf-8"))
+    del body["models"]["kev-local"]["checkpoint"]["revision"]
+    path.write_text(json.dumps(body), encoding="utf-8")
+    with pytest.raises(LocalConfigError, match="'revision' is required here"):
+        load_registry(path)
+    for mutable in ("main", "v1.0", "bf75a6a8"):
+        body["models"]["kev-local"]["checkpoint"]["revision"] = mutable
+        path.write_text(json.dumps(body), encoding="utf-8")
+        with pytest.raises(LocalConfigError, match="must be a full commit"):
+            load_registry(path)
+
+
+def test_base_revision_may_be_omitted_because_head_pt_carries_it(tmp_path, monkeypatch, no_network):
+    """The base is the one artifact whose revision the checkpoint itself records, so a registry may leave it out."""
+    offline(monkeypatch)
+    path, _, _ = registry_file(tmp_path)
+    body = json.loads(path.read_text(encoding="utf-8"))
+    del body["models"]["kev-local"]["base"]["revision"]
+    path.write_text(json.dumps(body), encoding="utf-8")
+    resolved = resolve(load_registry(path), "task-a")
+    assert resolved.base_revision == BASE_SHA   # from head.pt, not from the registry
+    no_network.check()
 
 
 def test_task_needs_exactly_one_of_questions_or_include(tmp_path):
@@ -415,6 +443,59 @@ def test_cli_refuses_a_batch_size_below_one(tmp_path):
                           "--input", str(tmp_path / "in.jsonl"), "--out", str(tmp_path / "out"), "--batch", "0"],
                          cwd=ROOT, capture_output=True, text=True)
     assert out.returncode == 2 and "at least 1" in out.stderr
+
+
+def test_a_failed_run_leaves_an_existing_output_directory_intact(tmp_path):
+    """Codex P2 on #4: a run that fails on a later chunk must not leave partial new rows beside the previous run's
+    summary. The real writer used by kev.task.run is exercised directly, so this tests the shipped behaviour."""
+    from kev.task import _AtomicOutputs
+    out = tmp_path / "out"
+    out.mkdir()
+    previous = {"rows.jsonl": b'{"row": 1, "state": "previous"}\n',
+                "answers.jsonl": b'{"row": 1, "model": "previous"}\n',
+                "task.json": b'{"task": "previous"}'}
+    for name, body in previous.items():
+        (out / name).write_bytes(body)
+
+    class Boom(Exception):
+        pass
+
+    with pytest.raises(Boom):
+        with _AtomicOutputs(out / "rows.jsonl", out / "answers.jsonl") as (rows, answers):
+            rows.write('{"row": 2, "state": "new"}\n')          # a later chunk got this far
+            answers.write('{"row": 2}\n')
+            raise Boom("the forward pass failed")
+    assert {p.name: p.read_bytes() for p in sorted(out.iterdir())} == previous
+    assert not [p for p in out.iterdir() if p.name.startswith(".")], "temp files must be discarded"
+
+    with _AtomicOutputs(out / "rows.jsonl", out / "answers.jsonl") as (rows, answers):   # a clean run publishes
+        rows.write('{"row": 9, "state": "published"}\n')
+        answers.write('{"row": 9}\n')
+    assert [json.loads(line)["row"] for line in (out / "rows.jsonl").read_text(encoding="utf-8").splitlines()] == [9]
+    assert not [p for p in out.iterdir() if p.name.startswith(".")]
+
+
+def test_refcache_repairs_and_aliases_on_a_kept_snapshot(tmp_path):
+    """Codex P2 on #4: a kept snapshot still rewrites its refs, so --alias-main takes effect and a dropped refs/ is
+    repaired instead of raising FileNotFoundError."""
+    from scripts.refcache import link, repo_dir
+    target = tmp_path / "artifact"
+    target.mkdir()
+    (target / "config.json").write_text("{}", encoding="utf-8")
+    revision = "a" * 40
+    cache = tmp_path / "hub"
+    assert link(cache, "org/model", target, revision) == "created"
+    assert link(cache, "org/model", target, revision) == "kept"
+    assert (repo_dir(cache, "org/model") / "refs" / revision).read_text(encoding="utf-8") == revision   # no trailing newline
+    shutil.rmtree(repo_dir(cache, "org/model") / "refs")
+    assert link(cache, "org/model", target, revision) == "kept"                          # repairs, does not raise
+    assert (repo_dir(cache, "org/model") / "refs" / revision).read_text(encoding="utf-8") == revision
+    assert link(cache, "org/model", target, revision, alias_main=True) == "kept"
+    assert (repo_dir(cache, "org/model") / "refs" / "main").read_text(encoding="utf-8") == revision
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "config.json").write_text("{}", encoding="utf-8")
+    assert link(cache, "org/model", other, revision) == "mismatch"
 
 
 def test_device_memory_definition_never_claims_an_unmeasured_peak():
