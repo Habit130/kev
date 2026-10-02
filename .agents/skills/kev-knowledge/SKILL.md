@@ -1,31 +1,31 @@
 ---
 name: kev-knowledge
-description: Search the Kev knowledge graph (~/dev/kev-knowledge, indexed by qmd) before re-deriving history. Use when asked what was tried, decided, measured or learned in earlier Kev sessions, why a rule or number exists, what a round or PR did, or when starting a research, serving, release or data task that earlier sessions may have covered. Also covers refreshing the graph after new sessions.
-allowed-tools:
-  - read
-  - grep
-  - glob
-  - exec
-permissions:
-  allow:
-    - Exec(qmd)
-    - Read(~/dev/kev-knowledge/**)
+description: Search an explicitly authorized Kev knowledge graph for earlier research decisions, measurements, or session history. Use when repository evidence is insufficient and habit has confirmed the external graph and access scope, or asks to refresh that authorized graph.
 ---
 
 # Kev knowledge graph (qmd)
 
-Every Devin CLI session on this repo since 17 Sep 2026 is distilled into `~/dev/kev-knowledge`: hand-written topic
-notes (what we know), one note per session (what happened), a day-by-day timeline, PR and issue indexes with
-back-links, and the extracted transcripts. It is indexed by `qmd` as the collection `kev`. Use it instead of
-re-deriving history from git or guessing why a rule exists. It lives outside the repo on purpose (transcripts are
-noisy and may hold private names); never copy its `raw/` or `digest/` text into the repo.
+The upstream author maintained a graph of Devin sessions since 17 Sep 2026: topic notes,
+session notes, a timeline, PR/issue indexes, and extracted transcripts. This fork does not
+assume the graph exists locally or grant access to the author's home-directory resources.
+
+Read repository evidence first: `PLAN.md`, model cards, committed reports, and the relevant
+archive tag. Use an external graph only after habit explicitly authorizes its path and
+read scope. Record the actual path and qmd collection mapping in ignored
+`.local/agent-context.md`. `KNOWLEDGE_ROOT` below denotes that confirmed location, not a
+default to discover. Verify each collection maps to the approved scope before querying.
+
+If no graph is authorized or qmd is unavailable, continue from repository evidence and
+state the history gap. Do not access external paths, install global tooling, or guess
+private history. Never copy `raw/` or `digest/` text into this public repo.
 
 ## When to look
 
-- "Did we try X?", "why is Y the rule?", "what did round N find?", "what did PR #N change and why?", "what did Jared
-  decide about Z?" - search first, then cite the note.
-- Before planning a round, a serving change, a data family, a release or a benchmark: read the matching topic note.
-- When AGENTS.md or PLAN.md states a rule without the incident behind it, the topic notes have the incident.
+- For earlier trials, rules, rounds, PRs, or upstream decisions, prefer available primary
+  repository records, then search the authorized graph and cite its note when needed.
+- Before a research, serving, data, release, or benchmark task, an authorized topic note
+  may supply earlier incidents not recorded in the repository's summary.
+- A graph note is context, not current authorization or a replacement for claim provenance.
 
 ## How to search
 
@@ -35,7 +35,7 @@ Two collections: `kev` (the distilled notes: index, timeline, topics, sessions, 
 ```sh
 qmd search "<keywords>" -c kev -n 8            # BM25, instant; best for identifiers (PR numbers, flags, suite names)
 qmd vsearch "<question>" -c kev -n 8           # semantic, ~3 s
-qmd query "<question>" -c kev -n 8             # hybrid + LLM rerank, best quality; ~20 s on this Mac (CPU, no Metal)
+qmd query "<question>" -c kev -n 8             # hybrid + LLM rerank; timing depends on the approved environment
 qmd query "<question>" -c kev --files --min-score 0.3   # paths only
 qmd get "kev/topics/<slug>.md"                 # read a note (line-numbered)
 qmd multi-get "kev/sessions/*.md" -l 30        # skim the first 30 lines of every session note
@@ -47,8 +47,8 @@ outcomes) -> `digest/<id>.md` (prose transcript, for quotes) -> `raw/<id>.md` (t
 resort). Transcript hits are long; read them with `qmd get "kev-transcripts/digest/<id>.md:<line>:<count>"` rather
 than whole.
 
-Without qmd: `rg -n "<term>" ~/dev/kev-knowledge/topics ~/dev/kev-knowledge/sessions`, then open
-`~/dev/kev-knowledge/index.md`.
+Without qmd, use `rg -n "<term>" "$KNOWLEDGE_ROOT/topics" "$KNOWLEDGE_ROOT/sessions"`,
+then open the approved graph's `index.md`. This fallback needs the same access authorization.
 
 ## Map
 
@@ -66,23 +66,29 @@ Without qmd: `rg -n "<term>" ~/dev/kev-knowledge/topics ~/dev/kev-knowledge/sess
 
 ## Citing
 
-Quote the note path (`~/dev/kev-knowledge/topics/calibration.md`) or the session id (`devin -r warm-lute` resumes it).
+Quote a graph-relative note path, such as `topics/calibration.md`, or a session ID.
+Put the actual machine path only in local context. Resuming an external Devin session is
+not implied by a read-only history request and needs a separate authorization.
 Numbers in the notes were written by hand from the transcripts; for a published number, prefer `docs/claims.json`,
 PLAN.md or the model card, and say which you used.
 
 ## Refreshing after new sessions
 
+Refresh only when habit authorizes writes to the graph and the source session store.
+The extraction tools may read another location outside the graph; inspect their inputs
+and confirm that scope before running them. Never expose credential-bearing transcripts.
+
 ```sh
-cd ~/dev/kev-knowledge
-python3 tools/extract_sessions.py        # read-only over ~/.local/share/devin/cli/sessions.db
+cd "$KNOWLEDGE_ROOT"
+python3 tools/extract_sessions.py        # reads the separately approved source session store
 python3 tools/build_graph.py             # exits non-zero naming any session that lacks a note
 qmd update && qmd embed -c kev && qmd embed -c kev-transcripts   # the second is slow (tens of minutes); optional
 ```
 
-If `qmd` is missing: `npm install -g --allow-scripts=node-llama-cpp @tobilu/qmd`, then
-`qmd collection add ~/dev/kev-knowledge --name kev --mask "*.md,topics/**/*.md,sessions/**/*.md"` and
-`qmd collection add ~/dev/kev-knowledge --name kev-transcripts --mask "digest/**/*.md,raw/**/*.md"` +
-`qmd collection exclude kev-transcripts`; the contexts are listed in `~/dev/kev-knowledge/README.md`.
+If qmd is missing, report the optional capability gap rather than install it globally.
+Any approved provisioning/index setup is separate from this skill's read workflow.
+The graph's README owns its actual collection setup; do not mutate global collections
+or index an unapproved transcript store as part of an ordinary lookup.
 
 For each new session: read `digest/<id>.md`, add an entry to `tools/session_notes.py` (title, summary, asks,
 outcomes, lessons, topics), extend the topic notes it taught something new, add the day to `timeline.md`, rebuild.

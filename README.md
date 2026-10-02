@@ -2,6 +2,8 @@
 
 Small Jev-like decision models you can train and run yourself.
 
+This fork, `Habit130/kev`, is for habit's personal use and small experiments, starting with local inference on public small checkpoints. The product instructions and results below describe upstream Kev. See [CONTEXT.md](CONTEXT.md) for the fork's scope and [AGENTS.md](AGENTS.md) for contributor governance. Upstream Hub, Space, and private-data resources are not owned by this fork.
+
 <p>
   <a href="https://github.com/jaredpalmer/kev/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/jaredpalmer/kev/ci.yml?style=for-the-badge&labelColor=000000" height="28"></a>
   <a href="https://huggingface.co/collections/jaredpalmer/kev-6aad9d0ea49f2589665e07cd"><img alt="Weights: Kev-0.8B · 4B · 9B · 27B" src="https://img.shields.io/badge/WEIGHTS-0.8B%20%C2%B7%204B%20%C2%B7%209B%20%C2%B7%2027B-0a0a0a.svg?style=for-the-badge&labelColor=000000" height="28"></a>

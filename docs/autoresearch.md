@@ -1,9 +1,26 @@
 # Running an unattended research session
 
+## Authority in this fork
+
+Read root `AGENTS.md`, `CONTEXT.md`, and `docs/agents/delivery.md` first. This runbook
+retains upstream research methods; it grants no access to an upstream author's accounts,
+budget, Hub/Space, private data, or knowledge graph. habit confirms a task-specific budget,
+resources, scope, and registered research confirmation before Execution runs them.
+Orchestration writes contracts/governance only, never model or infrastructure product code.
+Delivery Acceptance is a fresh contract review, not a research confirmation read.
+
+Use a frozen issue, a feature branch from latest `origin/main`, one writer, and allocated
+shared state. No stacked PRs, agent merge, auto-merge, or force-push. Publication,
+deployment, deletions, external access, and credential provisioning remain explicit habit
+decisions. Old references to Jared's approval describe upstream ownership, not authority
+to act on habit's fork or on Jared's resources.
+
 This is the operating program for a research session that runs without a human watching: an overnight session, or a
 long hand-off during the day. It replaces the per-night prompts (the round-6 and night-3 programs, kept at the git tag
 `research-archive-2026-09-24` under `docs/prompts/`) and folds in what went wrong on those nights. The research rules it
-applies are in [`PLAN.md`](../PLAN.md), "Standing rules for every round"; the commands are in [`AGENTS.md`](../AGENTS.md).
+applies are in [`PLAN.md`](../PLAN.md), "Standing rules for every round"; technical commands are in
+[`docs/agents/kev-reference.md`](agents/kev-reference.md) and verification order is in
+[`docs/agents/build.md`](agents/build.md).
 
 A session hill-climbs and confirms under registered rules and leaves a record Jared can act on. It does not publish.
 
@@ -11,7 +28,8 @@ A session hill-climbs and confirms under registered rules and leaves a record Ja
 
 Spend the first 30 minutes reading, not launching.
 
-1. `AGENTS.md`, all of it (commands, frozen suites, canonical homes, Modal settings).
+1. `AGENTS.md`, then the task-relevant technical reference and build guide it routes to
+   (commands, frozen suites, canonical homes, Modal settings).
 2. `PLAN.md`: where we stand, what we have learned, the standing rules, the data policy and Next. For a finding you want to
    build on, read its evidence in the archive: `git show research-archive-2026-09-24:PLAN.md`.
 3. The skills in `.agents/skills/`: `kev-modal-study` (launching, watching and pulling GPU work; read its Gotchas),
@@ -22,7 +40,7 @@ Spend the first 30 minutes reading, not launching.
 
 Then set up:
 
-- Work in a worktree on a research branch (`git worktree add -b research/<session> /tmp/kev-<session> origin/main`). Push
+- Work in an allocated worktree on an issue branch (`git worktree add -b research/<session> .local/worktrees/<session> origin/main`). Push
   after every commit so nothing is lost if the machine sleeps. Code meant for main goes through its own reviewed PR.
 - Read `uv run modal billing summary --json` and record `metered_cost` as the baseline in the state file (section 6).
 - If a previous session left a state file, read it first and resume from it; detached Modal jobs keep running without you.
@@ -34,7 +52,8 @@ Then set up:
 - A study's admission bound is printed at launch and saved in `runs/<study>.spawn.json`; a benchmark call's bound is
   `compute_bound(gpu, timeout, trials)` (`kev/budget.py`). A spec's study `budget` must be at least its bound
   (`kev.rounds validate` checks it; `modal_app.admit_study` refuses a study over its budget before anything runs, and a
-  study is capped at $250 and 28,800 s).
+  LoRA study is capped at $250 and 28,800 s; full-weight studies allow $1,000 and 86,400 s
+  per attempt, with continuations included in the bound). `kev/budget.py` is authoritative.
 - Keep a reserve (about 10 % of the authorization) that no phase plans into: billing readings lag and get revised, and
   admission bounds overstate reads badly (a read batch carries the timeout of its slowest job).
 - Record every reading with its UTC time in the state file. AI Gateway spend (Jev reference reads, label judges) has its own
@@ -101,8 +120,10 @@ caffeinate -i nohup uv run python -m kev.rounds watch experiments/rounds/r<N>.js
 ```
 
 - In the first five minutes of every study, count optimizer steps per minute in `modal container logs <id>` and project
-  the wall time against the timeout (`ep0 step N/M`: M is over all epochs). A timed-out container saves nothing; cancel
-  (`FunctionCall.from_id(cid).cancel()`) and relaunch under a new study name with fewer records or a longer timeout.
+  the wall time against the timeout (`ep0 step N/M`: M is over all epochs). LoRA timeout can
+  lose unfinished work; full-weight trials resume from committed resume points under the
+  existing attempt ledger. Changes to a registered recipe or budget require a new contract
+  and registration; do not silently cancel/relaunch with different data or settings.
 - `watch` polls the spawned trials, pulls each finished study (one pull per study at a time), launches that arm's reads once
   (one batched `::benchmarks` call per arm, 60 s apart), waits for them and writes `runs/r<N>-readout/round<N>.json` and a
   table. It is restartable: state is in `runs/<study>.watch.json` and the launch intent in `runs/r<N>-reads-<arm>.json`.
@@ -120,10 +141,13 @@ caffeinate -i nohup uv run python -m kev.rounds watch experiments/rounds/r<N>.js
 
 ## 5. What a session may and may not touch
 
-May: write specs, plans and PLAN.md sections; build new frozen data under new directories; launch studies and reads through
-`modal_app.py`; change scripts and `modal_app.py` infrastructure constants; open PRs for code that belongs on main.
+Within its frozen issue, Execution may write specs, plans and PLAN.md sections, build new
+frozen data under new directories, launch authorized studies and reads through `modal_app.py`,
+and change scripts/infrastructure. Product changes use their own verified PR before a round
+depends on them. Orchestration does not implement those changes.
 
-May not, without Jared's explicit OK:
+May not without habit's explicit scope/resource authorization, and the upstream owner's
+permission when the target is upstream-owned:
 
 - publish or change anything on the Hub (`kev.publish`, `hf upload`, `hf repos tag`, `scripts/publish_space.sh`, a released
   `head.pt`), make a private repo public, or deploy a public endpoint;
@@ -149,9 +173,12 @@ and move to the next arm. Do not wait for a human.
 
 ## 6. Resilience
 
-- **State file** `runs/<session>-state.json` (runs/ is gitignored; `git add -f` it on the research branch): baseline and
-  authorization, spend readings with UTC times, every study with its spawn ids, bound and status, reads launched and
-  pulled, candidates, PRs, pending decisions. Update it after every launch, pull and read, and commit it with the PLAN section.
+- **Local state record** in ignored `.local/agent-context.md`: baseline and authorization,
+  spend readings with UTC times, every study with its spawn ids, bound and status, reads
+  launched and pulled, candidates, PRs, pending decisions. Update it after every launch,
+  pull and read. Never force-add or commit this live record. Generated spawn/watch/launch
+  ledgers under `runs/` remain local too; use the committed spec and redacted reports for
+  durable research provenance, not machine/cloud instance identifiers.
 - **Detached jobs.** Studies spawn on the deployed app and survive the local client; a local error after `study` may still
   have spawned trials, so run `modal container list` before relaunching, and never relaunch under the same study name.
   Probes and benchmarks run with `--detach`.
@@ -180,10 +207,13 @@ At the end of the session (and in the state file as it goes):
 
 - Each round's PLAN.md section carries its registration, read-out table, confirmation results and verdict, negative or not,
   with report paths.
-- Update PLAN.md "Where we stand" (released and confirmed candidates, running jobs, spend) and "What we have learned" if a
-  finding changed; add each round to the Record table.
-- A session summary in PLAN.md: spend (baseline, final reading, running bounds), what is pending on Modal with the exact
-  commands to finish it, incidents, and at most three next steps with their evidence.
+- Update PLAN.md "Where we stand" with released/confirmed candidates and redacted work
+  status, and "What we have learned" if a finding changed; add each round to the Record table.
+- A public session summary in PLAN.md records outcomes, reviewed aggregate spend, incidents,
+  and next steps with checkpoint/suite/spec/report provenance. Keep live spend readings,
+  exact machine/cloud completion commands, account/app/call identifiers, resource instances,
+  and absolute machine paths in ignored local context. Review new reports for the same
+  boundary before committing; initialization does not rewrite existing research evidence.
 - Every number carries checkpoint, suite and partition, n and report path; commit the read-outs and verdicts the numbers
   come from (`.gitignore` keeps reports, not prediction dumps; add a rule for new read-out directories).
 - Clock stamps: registration and result times are commit times. Do not write a time into a heading before it happens;
@@ -204,8 +234,11 @@ At the end of the session (and in the state file as it goes):
   `::pull --weights` copies the shards when something local really needs them.
 - **Deploy after the data.** The image copies `evals/`; the launcher only checks `kev/*.py` hashes, so a trial whose data
   file was added after the deploy fails inside the container. `--gpu H200` on `study` needs an app deployed with `KEV_GPU=H200`.
-- **27B.** H200 only (bf16 backbone, 55 GB resident); study timeouts up to 28,800 s (a 1-epoch skills delta at lr 2e-5 ran
-  about 8.8 s per optimizer step); fp32 reads about three times a 9B's (spec `read_timeout: {"27b": 14400}`); the locked read
+- **27B research reference.** The measured LoRA research path used H200, bf16 backbone,
+  about 55 GB resident, and timeouts up to 28,800 s. Full-weight studies follow the separate
+  bounds above; current serving GPU choices are not restricted to this old research setup.
+  A 1-epoch skills delta at lr 2e-5 ran about 8.8 s per optimizer step. Its fp32 reads took
+  about three times a 9B's (spec `read_timeout: {"27b": 14400}`); the locked read
   needs `--timeout 14400 --memory-mb 131072` (spec `locked_args`) on an H200 (the GPU comes from the spec's `gpu` / the
   deployed app, or `--gpu H200` by hand). Every bf16-weights trial fails the in-trial
   `isolation_and_packing` gate (an fp32 check); read results from the rows and measure served isolation in bf16 separately.

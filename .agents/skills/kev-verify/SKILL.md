@@ -1,9 +1,14 @@
 ---
 name: kev-verify
-description: Verify a Kev change has no regression and ship it as a reviewed PR. Use when refactoring, editing kev/*.py, scripts, the Space or the playground, and when opening or merging Kev pull requests (stacked branches, squash merges).
+description: Verify a Kev change has no regression and prepare an issue-scoped PR. Use when refactoring, editing kev/*.py, scripts, the Space or the playground, and when handing a verified Kev pull request back for habit's squash merge.
 ---
 
 # Verify and ship a Kev change
+
+Read root `AGENTS.md` and `docs/agents/delivery.md` for the frozen issue contract and
+authority. Execution verifies the affected paths; Orchestration writes governance only.
+Model downloads, servers, cloud jobs, and publication need explicit task authorization
+and resource allocation. A governance-only diff does not require model or training runs.
 
 Behaviour is defined by numbers: probabilities, saved weights, frozen-suite bytes. A refactor is done when the numbers
 are bit-identical to `main`, not when the tests are green. Work bottom-up: unit suites, then weight-backed parity, then
@@ -43,7 +48,9 @@ KEV_BASE_URL=http://127.0.0.1:8009 uv run --extra serve python -m pytest tests/t
 ```
 
 Space changes: `python3 -m py_compile space/app.py`; the Space vendors `kev/{model,api,checkpoint}.py` via
-`scripts/publish_space.sh`, so any change to those needs a republish. Playground: `cd playground && npm run lint && npx tsc --noEmit -p .`.
+`scripts/publish_space.sh`, so serving changes need a separately authorized republish to
+the confirmed target. Never infer permission to write the upstream Space. Playground
+command order is in `docs/agents/build.md`, including Next type generation before typecheck.
 
 ### Browser end-to-end checks
 
@@ -58,17 +65,19 @@ Space changes: `python3 -m py_compile space/app.py`; the Space vendors `kev/{mod
   the real UI without changing TypeScript types or mocking requests. Capture the POST response as well as pixels.
 - At `/chess`, use **Model vs model**, **New game**, then **Step** for a bounded one-move test.
   Expect a legal move, populated move/evaluation panels, and Black to move. Avoid **Play** for a one-request test.
-- `KEV_API_KEY` is read at server startup. Restart with a throwaway local key to verify rejection without a bearer
-  header and acceptance with the correct header. The playground has no key input and will show 401 in this mode.
+- `KEV_API_KEY` is read at server startup. habit provisions any test key without exposing
+  its value to the agent. Verify rejection without a bearer header and acceptance through
+  habit's configured client. The playground has no key input and will show 401 in this mode.
   Restore the open server afterward. `/openapi.json` remains accessible without a key.
 - If desktop tools cannot connect to a display, use real headless Chromium via an isolated Playwright environment
   when approved; save full-page screenshots and network responses. Do not substitute mocked frontend responses.
   A full-page capture can include a sticky footer over a card; also capture a scrolled viewport when needed.
 
-#### Devin Secrets Needed
+#### Credential prerequisites
 
-None for local testing with public checkpoints and a throwaway local API key. Private checkpoints require
-`HF_TOKEN`; hosted protected endpoints require their configured API key rather than the local test value.
+Public local checks need no private-resource credentials. Private checkpoints or protected
+endpoints require habit-managed authentication. Never read, print, generate, or record
+credential values through the agent; habit provisions them outside governance artifacts.
 
 ## 4. Parity harness against main
 
@@ -78,17 +87,20 @@ row form, prefix cache) and the trainer fine-tunes Qwen3.5-0.8B-Base. CPU with f
 (checked 2026-09-22: max |Δ| = 0.0 on the benchmark rows and on all 372 adapter tensors).
 
 ```bash
-git worktree add /tmp/kev-main origin/main
-OLD="env PYTHONPATH=/tmp/kev-main $PWD/.venv/bin/python"          # `import kev` resolves to the worktree; kev is not installed in the venv
-SUITE="$PWD/evals/smoke-v1"                                        # absolute: the worktree process must read this checkout's files
+ROOT="$PWD"
+REFERENCE="$ROOT/.local/worktrees/kev-main"
+git worktree add "$REFERENCE" origin/main
+OLD=(env "PYTHONPATH=$REFERENCE" "$ROOT/.venv/bin/python")     # explicitly resolve imports to the reference worktree
+SUITE="$ROOT/evals/smoke-v1"                                   # the reference process reads this checkout's inputs
 # benchmark rows/report (model, loader, metrics, api, data), ~15 s per tree on an M-series CPU
-(cd /tmp/kev-main && $OLD -m kev.benchmark --run jaredpalmer/kev-0.8b --suite "$SUITE" --out /tmp/bench-main)
-uv run python -m kev.benchmark --run jaredpalmer/kev-0.8b --suite "$SUITE" --out /tmp/bench-new
+(cd "$REFERENCE" && "${OLD[@]}" -m kev.benchmark --run jaredpalmer/kev-0.8b --suite "$SUITE" --out "$ROOT/.local/bench-main")
+uv run python -m kev.benchmark --run jaredpalmer/kev-0.8b --suite "$SUITE" --out .local/bench-new
 # -> rows.json must be identical; report.json identical on every numeric field
 # training (trainer, losses, augmentation), ~5 min per tree (reference DeltaNet kernels on CPU): same args, then compare
 # head.pt["head"] tensors and adapter_model.safetensors
-ARGS="--n_per_source 4 --epochs 1 --accum 2 --batch 2 --device cpu --base Qwen/Qwen3.5-0.8B-Base --lr 1e-4 --perm_kl 0.2 --perm_frac 1 --p_none_pair 0.5 --ord_w 0.3"
-(cd /tmp/kev-main && OMP_NUM_THREADS=4 $OLD -m kev.train $ARGS --out /tmp/train-main); OMP_NUM_THREADS=4 uv run python -m kev.train $ARGS --out /tmp/train-new
+ARGS=(--n_per_source 4 --epochs 1 --accum 2 --batch 2 --device cpu --base Qwen/Qwen3.5-0.8B-Base --lr 1e-4 --perm_kl 0.2 --perm_frac 1 --p_none_pair 0.5 --ord_w 0.3)
+(cd "$REFERENCE" && OMP_NUM_THREADS=4 "${OLD[@]}" -m kev.train "${ARGS[@]}" --out "$ROOT/.local/train-main")
+OMP_NUM_THREADS=4 uv run python -m kev.train "${ARGS[@]}" --out .local/train-new
 # data converters: json.dumps(build(3, "test", 0, only=[...])) from both trees must be equal
 ```
 
@@ -100,11 +112,14 @@ Modal with the real base (`kev-modal-study`), not here.
 
 ## 5. Ship
 
-- One branch per concern, stacked on the previous branch while it is under review. Write the body with the
-  `kev-pr-description` skill (problem, mechanism, uncertainty, scope); the parity evidence from this skill goes in its
-  `Test plan` as re-runnable commands and numbers, not "tests pass".
-- Review every PR with the `thermonuclear-code-review` skill (a read-only subagent works well) and apply the findings
-  before merging; the reviewer has caught real bugs (a dropped import, a double-applied temperature).
-- Merge with `gh pr merge <n> --squash`. Because of the squash, rebase the next stacked branch with
-  `git rebase --onto origin/main <merged-branch> <next-branch>` (a plain rebase replays the already-merged commits and conflicts).
+- One frozen issue, feature branch from latest `origin/main`, PR, and active writer per
+  delivery. Parallel issues use separate worktrees, never stacked PRs.
+- Write the English Conventional Commit title and body with `kev-pr-description`. Put
+  re-runnable commands, measured evidence, and the complete criterion matrix in Verification.
+- Use `thermonuclear-code-review` for structural review. It has caught dropped imports and
+  doubled temperatures, but P2/P3 structure suggestions are non-blocking follow-up. Do not
+  broaden the frozen contract or spawn helpers without the session's delegation authority.
+- Request `@codex review`, record the actual result, and follow the conditional independent
+  Acceptance protocol. Leave issue and PR open; habit alone squash-merges. Never enable
+  auto-merge, force-push, or run an agent merge/rebase chain from an inherited example.
 - Never commit regenerated `runs/leaderboard.*` or frozen `evals/` files as part of a refactor.
