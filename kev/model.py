@@ -260,8 +260,10 @@ def probs_one(model, enc, prefix, keep):
 
 class DecisionModel(nn.Module):
     def __init__(self, name, tok, device, lora=None, revision=None, attn=None, head_dim=256, option_isolation=False, special_embeddings=False, lora_targets="all", dtype=torch.float32,
-                 weights=None, direct_load=False):
-        """weights: a full-weight checkpoint directory whose saved backbone replaces the base's (kev.checkpoint's loader rule).
+                 weights=None, direct_load=False, local=None):
+        """local: whether `name` is a local base directory rather than a Hub id, recorded as `.local` so a caller can tell
+        which of the two this model was built from (configured local mode, kev.local).
+        weights: a full-weight checkpoint directory whose saved backbone replaces the base's (kev.checkpoint's loader rule).
         direct_load: load the backbone straight onto `device` (transformers device_map) instead of staging it in host memory;
         full-weight training on several GPUs in one container needs it (N processes x a 51 GB checkpoint otherwise). Off by
         default: it changes where the rotary buffers are computed, so every other path keeps its bits."""
@@ -274,6 +276,7 @@ class DecisionModel(nn.Module):
         if direct_load: load["device_map"] = {"": torch.cuda.current_device() if device == "cuda" else device}   # "cuda": under torchrun, this rank's GPU
         self.lm = AutoModel.from_pretrained(weights, **load) if weights else AutoModelForCausalLM.from_pretrained(name, revision=revision, **load).model
         self.pad_id = pad_id(tok)
+        self.local = bool(local)   # kev.checkpoint passes True when the backbone came from a configured local directory
         # hybrid backbones (Qwen3.5: Gated DeltaNet layers, recurrent) cannot honour the block-causal mask, so every
         # question runs as its own causal row continuing from the state (rows_of). Attention-only backbones keep the
         # packed form; the two agree to fp32 noise (tests/test_model.py::test_rows_match_packed).

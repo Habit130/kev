@@ -37,7 +37,7 @@ import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from .checkpoint import Checkpoint, LoadOptions, base_weights
+from .checkpoint import Checkpoint, LoadOptions, base_weights, require_commit_revision
 from .model import is_hybrid
 
 SCHEMA = "kev-local-inference/1"
@@ -123,9 +123,11 @@ def _entry(where, what, root, require_revision):
     revision = where.get("revision")
     if revision is not None and not isinstance(revision, str):
         raise LocalConfigError(f"{what}: 'revision' must be a string when given")
-    if revision is not None and COMMIT.fullmatch(revision) is None:
-        raise LocalConfigError(f"{what}: 'revision' must be a full commit ({COMMIT.pattern}); {revision!r} is a mutable "
-                               f"branch or tag, and a pin that can move is not an identity")
+    if revision is not None:
+        try:
+            require_commit_revision(revision, "")
+        except ValueError as exc:
+            raise LocalConfigError(f"{what}: {str(exc).removeprefix(': ')}") from None
     if revision is None and require_revision:
         raise LocalConfigError(f"{what}: 'revision' is required here. Nothing else records this checkpoint's own commit "
                                f"(head.pt records its base, not itself), so without it no pin can be reported")
@@ -231,7 +233,7 @@ def resolved_meta(ck, entry):
         raise LocalConfigError(
             f"{entry.path}: head.pt pins base revision {meta.base_revision} but the registry pins {entry.revision}; "
             f"refusing to load a different revision of the base")
-    revision = meta.base_revision or entry.revision
+    revision = require_commit_revision(meta.base_revision or entry.revision, f"{entry.path}: head.pt base_revision")
     if revision is None:
         raise LocalConfigError(
             f"{entry.path}: head.pt records no base_revision and the registry pins none, so this base has no immutable "

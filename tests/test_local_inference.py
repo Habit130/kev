@@ -168,7 +168,7 @@ def test_checkpoint_revision_is_required_and_must_be_a_commit(tmp_path):
     for mutable in ("main", "v1.0", "bf75a6a8"):
         body["models"]["kev-local"]["checkpoint"]["revision"] = mutable
         path.write_text(json.dumps(body), encoding="utf-8")
-        with pytest.raises(LocalConfigError, match="must be a full commit"):
+        with pytest.raises(LocalConfigError, match="is not a full commit"):
             load_registry(path)
 
 
@@ -324,6 +324,66 @@ def test_config_path_prefers_the_explicit_argument_and_else_the_environment(monk
     assert config_path("/tmp/explicit.json") == "/tmp/explicit.json"
     monkeypatch.delenv("KEV_LOCAL_INFERENCE_CONFIG")
     assert config_path() is None   # legacy mode: --run, unchanged
+
+
+def test_head_pt_revision_goes_through_the_same_commit_check(tmp_path, monkeypatch, no_network):
+    """Codex P2: head.pt is as able as a registry entry to record `main` or a tag, and such a pin can move."""
+    from kev.checkpoint import Meta, write_meta
+    offline(monkeypatch)
+    path, ck, _ = registry_file(tmp_path)
+    body = json.loads(path.read_text(encoding="utf-8"))
+    del body["models"]["kev-local"]["base"]["revision"]      # so the revision can only come from head.pt
+    path.write_text(json.dumps(body), encoding="utf-8")
+    for mutable in ("main", "v1.0", "bf75a6a8"):
+        write_meta(ck, Meta(base=BASE_REPO, base_revision=mutable, head={}, lora=4))
+        with pytest.raises(ValueError, match="is not a full commit"):
+            resolve(load_registry(path), "task-a")
+    write_meta(ck, Meta(base=BASE_REPO, base_revision=BASE_SHA, head={}, lora=4))
+    assert resolve(load_registry(path), "task-a").base_revision == BASE_SHA
+    no_network.check()
+
+
+def test_a_load_with_its_own_base_does_not_leak_into_the_next_one(tmp_path, monkeypatch, no_network):
+    """Codex P2: the local base directory belongs to the call. A later load with default options must resolve the
+    checkpoint's own base (head.pt), not inherit the previous call's directory."""
+    import torch
+    from kev.checkpoint import Checkpoint, LoadOptions
+    offline(monkeypatch)
+    root = tmp_path / "models"
+    ck_dir = artifact(root, "checkpoint", "ckpt-0.8b")
+    local = artifact(root, "base", "local-base")
+    ck = Checkpoint(str(ck_dir))
+    assert ck.base_path is None                                    # nothing configured: the Hub id in head.pt
+    # the first call names a local base; the second must not see it
+    import kev.checkpoint as C
+    seen = []
+    monkeypatch.setattr(C, "load_tokenizer", lambda name, revision=None: seen.append((name, revision)) or object())
+    monkeypatch.setattr(Checkpoint, "_load_torch", lambda self, tok, device, opts, base_path=None: _Fake(tok))
+    ck.load("cpu", LoadOptions(backend="torch", base_path=local))
+    ck.load("cpu", LoadOptions(backend="torch"))
+    assert seen[0] == (str(local), None), seen[0]
+    assert seen[1][0] == BASE_REPO and seen[1][1] == BASE_SHA, seen[1]
+    assert ck.base_path is None, "the instance must not retain the first call's directory"
+    no_network.check()
+
+
+class _Fake:
+    """The minimum kev.checkpoint.load touches after building the backbone."""
+
+    class head:
+        temperature = 1.0
+
+        @staticmethod
+        def load_state_dict(state):
+            return None
+
+    backend, dtype, hybrid = "torch", "float32", True
+
+    def __init__(self, tok):
+        self.tok = tok
+
+    def eval(self):
+        return self
 
 
 def test_a_legacy_load_options_is_untouched_by_local_mode():
