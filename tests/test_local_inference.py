@@ -184,6 +184,23 @@ def test_base_revision_may_be_omitted_because_head_pt_carries_it(tmp_path, monke
     no_network.check()
 
 
+def test_registry_revision_fills_in_when_head_pt_has_none(tmp_path, monkeypatch, no_network):
+    """Codex P2: an older checkpoint with no base_revision must still report the registry's pin, and a model with
+    neither source of truth is refused rather than loaded unpinned."""
+    from kev.checkpoint import Meta, write_meta
+    offline(monkeypatch)
+    path, ck, _ = registry_file(tmp_path)
+    write_meta(ck, Meta(base=BASE_REPO, head={}, lora=4))          # as an older checkpoint: no base_revision
+    assert resolve(load_registry(path), "task-a").base_revision == BASE_SHA   # the registry's revision is kept
+    no_network.check()
+    body = json.loads(path.read_text(encoding="utf-8"))
+    del body["models"]["kev-local"]["base"]["revision"]
+    path.write_text(json.dumps(body), encoding="utf-8")
+    with pytest.raises(LocalConfigError, match="no immutable"):
+        resolve(load_registry(path), "task-a")
+    no_network.check()
+
+
 def test_task_needs_exactly_one_of_questions_or_include(tmp_path):
     path, _, _ = registry_file(tmp_path)
     body = json.loads(path.read_text(encoding="utf-8"))
@@ -284,15 +301,21 @@ def test_resolved_carries_both_local_paths_and_the_pinned_identity(tmp_path, mon
 
 
 def test_base_identity_of_a_local_and_a_hub_base(tmp_path):
+    """A Hub id is its own identity; a recorded path is unwound structurally, whether or not it still exists here
+    (Codex P2: a checkpoint trained elsewhere records a cache path that is absent on this machine)."""
     from kev.model import base_identity
     assert base_identity("Qwen/Qwen3.5-0.8B-Base") == "Qwen/Qwen3.5-0.8B-Base"
+    assert base_identity("jaredpalmer/kev-4b") == "jaredpalmer/kev-4b"
     hub = tmp_path / "hub" / "models--Qwen--Qwen3.5-4B-Base" / "snapshots" / ("c" * 40)
     hub.mkdir(parents=True)
     assert base_identity(hub) == "Qwen/Qwen3.5-4B-Base"
+    assert base_identity(str(tmp_path / "models" / "Qwen3.5-0.8B-Base")) == "Qwen3.5-0.8B-Base"   # absent, no cache component
+    gone = "/nonexistent/cache/models--Qwen--Qwen3.5-4B-Base/snapshots/" + "d" * 40
+    assert base_identity(gone) == "Qwen/Qwen3.5-4B-Base"                          # absent cache snapshot still decodes
     plain = tmp_path / "models" / "Qwen3.5-0.8B-Base"
     plain.mkdir(parents=True)
     assert base_identity(plain) == "Qwen3.5-0.8B-Base"
-    assert base_identity(tmp_path / "gone") == str(tmp_path / "gone")
+    assert base_identity(tmp_path / "gone") == "gone"
 
 
 def test_config_path_prefers_the_explicit_argument_and_else_the_environment(monkeypatch):
@@ -364,6 +387,14 @@ def test_receipt_verification_refuses_a_missing_or_contradictory_entry(tmp_path)
                        "kev-local.base": {"repo": "Qwen/Qwen3.5-0.8B-Base", "revision": "b" * 40, "sha256": complete(base)}})
     with pytest.raises(LocalConfigError, match="is pinned to " + BASE_SHA):
         verify_artifacts(reg, stale, task_id="task-a")   # the effective revision comes from head.pt
+    for missing in ("repo", "revision"):
+        partial = tmp_path / f"no-{missing}.json"
+        body = {"kev-local.checkpoint": {"repo": "acme/kev-local", "revision": "a" * 40, "sha256": complete(ck)},
+                "kev-local.base": {"repo": "Qwen/Qwen3.5-0.8B-Base", "revision": BASE_SHA, "sha256": complete(base)}}
+        del body["kev-local.base"][missing]
+        write_json(partial, body)
+        with pytest.raises(LocalConfigError, match=f"records no '{missing}'"):
+            verify_artifacts(reg, partial, task_id="task-a")
 
 
 # --- batch inputs --------------------------------------------------------------------------------------------------

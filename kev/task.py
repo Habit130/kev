@@ -158,6 +158,9 @@ class _AtomicOutputs:
             handle.close()
         self.handles = []
         if exc_type is None:
+            # the last path is the summary: unlink it first, so an interruption between the two row renames cannot leave
+            # a complete-looking directory (new rows beside the previous run's summary). Replaced again below.
+            self.paths[-1].unlink(missing_ok=True)
             for tmp, final in zip(self.tmp, self.paths):
                 os.replace(tmp, final)
         else:

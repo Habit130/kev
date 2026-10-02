@@ -63,13 +63,17 @@ def load_tokenizer(name, revision=None):
 
 
 def base_identity(name):
-    """The public repository a base was pinned to, from the name a checkpoint recorded. `save_pretrained` writes the local
-    directory it was saved into, so a path is unwound through the Hub cache layout back to `org/model`; a Hub id is
-    already its own identity, and anything else (a plain directory name) is returned as it stands."""
+    """The public repository a base was pinned to, from the name a checkpoint recorded.
+
+    A Hub id (`org/model`) is already its own identity. `save_pretrained` instead writes the local directory it was
+    saved into, so a recorded path is unwound through the Hub cache layout back to `org/model`. That decoding is
+    structural, not a filesystem check: a checkpoint trained on one machine and copied to another records a path that
+    does not exist here, and it must still compare equal to the registry's repository id."""
+    from .checkpoint import HUB_ID, is_hub_id
     name = str(name)
-    if not os.path.isdir(name):
-        return name
-    for part in reversed(Path(name).resolve().parts):
+    if is_hub_id(name) or HUB_ID.fullmatch(name.partition("@")[0]) is not None:
+        return name.partition("@")[0]
+    for part in reversed(Path(name).parts):
         if part.startswith("models--"):
             return part[len("models--"):].replace("--", "/", 1)
     return Path(name).name

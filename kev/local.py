@@ -219,7 +219,9 @@ def resolved_meta(ck, entry):
     """The checkpoint's own identity, checked against the registry pin. -> (base source, base revision).
 
     `head.pt` carries the base it was trained on; a registry entry that disagrees with it is a contradictory
-    selection, not a reason to load a different base."""
+    selection, not a reason to load a different base. The revision reported is the metadata's, or the registry's when an
+    older checkpoint's `head.pt` does not carry one; a model with neither has no immutable base revision at all, which is
+    refused rather than loaded unpinned."""
     meta = ck.meta
     if entry.source != meta.base_identity:
         raise LocalConfigError(
@@ -229,7 +231,12 @@ def resolved_meta(ck, entry):
         raise LocalConfigError(
             f"{entry.path}: head.pt pins base revision {meta.base_revision} but the registry pins {entry.revision}; "
             f"refusing to load a different revision of the base")
-    return meta.base_identity, meta.base_revision
+    revision = meta.base_revision or entry.revision
+    if revision is None:
+        raise LocalConfigError(
+            f"{entry.path}: head.pt records no base_revision and the registry pins none, so this base has no immutable "
+            f"revision; add one to the registry entry (the full commit of {entry.source})")
+    return meta.base_identity, revision
 
 
 def artifact_problems(kind, path):
@@ -307,10 +314,16 @@ def verify_artifacts(registry, receipt, task_id=None):
             if uncovered := sorted(required - set(record.get("sha256") or {})):
                 raise LocalConfigError(f"{receipt_file}: the {kind} entry does not record {uncovered}, so it cannot vouch for "
                                        f"every file a load reads; record the complete payload")
-            if record.get("repo") and record["repo"] != entry.source:
+            # both identity fields are required: a receipt that omits one cannot vouch for the pin it is being
+            # compared against, and the checkpoint's own head.pt records its base, never the checkpoint repository.
+            for field in ("repo", "revision"):
+                if not record.get(field):
+                    raise LocalConfigError(f"{receipt_file}: the {kind} entry records no {field!r}, so it cannot be "
+                                           f"compared with the configured pin; record the complete acquisition identity")
+            if record["repo"] != entry.source:
                 raise LocalConfigError(f"{receipt_file}: {kind} receipt says {record['repo']!r} but the registry pins {entry.source!r}")
-            revision = entry.revision if kind == "checkpoint" else (effective[model_id] or entry.revision)
-            if record.get("revision") and revision and record["revision"] != revision:
+            revision = entry.revision if kind == "checkpoint" else effective[model_id]
+            if record["revision"] != revision:
                 raise LocalConfigError(f"{receipt_file}: {kind} receipt says revision {record['revision']} but this checkpoint "
                                        f"is pinned to {revision}")
             for name, want in sorted(record["sha256"].items()):
