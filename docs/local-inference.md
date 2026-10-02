@@ -213,6 +213,11 @@ probabilities must be identical. `scripts/local_parity.py` writes each side's ra
 with its kernel environment; `scripts/refcache.py` creates the ignored Hub-cache metadata links that
 let the reference revision resolve the already-acquired originals offline without a second weight copy.
 
+The reference run must be given `--reference-root <baseline checkout>`: the runner lives in the
+delivery checkout, so `sys.path` alone would let both processes import the same `kev` and make the
+comparison vacuous. Each dump records `imported_kev`, and the integration test requires the two
+paths to differ.
+
 ## Constraints
 
 - One model phase at a time on a laptop: run the 4B preset alone, and stop the previous server before

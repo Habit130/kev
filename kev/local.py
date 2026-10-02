@@ -259,7 +259,7 @@ def artifact_problems(kind, path):
 
 REQUIRED = {
     "checkpoint": ("head.pt", "adapter_config.json", "adapter_model.safetensors", "tokenizer.json", "tokenizer_config.json"),
-    "base": ("config.json", "model.safetensors.index.json", "tokenizer.json"),
+    "base": ("config.json", "model.safetensors.index.json", "tokenizer.json", "tokenizer_config.json"),
 }
 
 

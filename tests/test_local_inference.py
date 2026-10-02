@@ -674,7 +674,7 @@ def test_integration_separate_process_fp32_parity(tmp_path):
     # differs — PYTHONPATH puts the reference revision's kev/ first for the baseline run.
     runner = ROOT / "scripts/local_parity.py"
     assert (Path(REFERENCE) / "kev/checkpoint.py").is_file(), f"{REFERENCE} is not a kev checkout"
-    ref = subprocess.run([sys.executable, str(runner), "--mode", "reference",
+    ref = subprocess.run([sys.executable, str(runner), "--mode", "reference", "--reference-root", str(REFERENCE),
                           "--checkpoint", str(resolved.checkpoint.path), "--out", str(reference_json)],
                          cwd=REFERENCE, capture_output=True, text=True,
                          env={**os.environ, **base, "PYTHONPATH": str(REFERENCE)})
@@ -684,6 +684,10 @@ def test_integration_separate_process_fp32_parity(tmp_path):
                          cwd=ROOT, capture_output=True, text=True, env={**os.environ, **base})
     assert new.returncode == 0, new.stderr[-4000:]
     a, b = json.loads(reference_json.read_text(encoding="utf-8")), json.loads(delivery_json.read_text(encoding="utf-8"))
+    # the comparison only means something if the two processes really ran different kev packages
+    assert Path(a["imported_kev"]).is_relative_to(Path(REFERENCE).resolve()), a["imported_kev"]
+    assert Path(b["imported_kev"]).is_relative_to(ROOT.resolve()), b["imported_kev"]
+    assert a["imported_kev"] != b["imported_kev"], "both processes imported the same kev; the parity check would be vacuous"
     assert a["checkpoint_files"] == b["checkpoint_files"], "the two processes must read the same original checkpoint bytes"
     assert a["kernel_environment"] == b["kernel_environment"], "the two processes must run the same kernels"
     assert a["temperature"] == b["temperature"]

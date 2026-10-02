@@ -343,6 +343,9 @@ def main():
             ap.error("--config and --task are used together; a configured server serves exactly one task's checkpoint")
         if a.run != ap.get_default("run"):
             ap.error("--run and --config/--task are mutually exclusive: a configured server takes its checkpoint from the task")
+    elif a.receipt:
+        ap.error("--receipt verifies a configured task's artifacts; it needs --config and --task (a legacy --run has no "
+                 "registry pin to compare it against)")
     resolved = verified = None
     if a.task:
         try:

@@ -22,9 +22,25 @@ import hashlib
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+HERE = Path(__file__).resolve().parents[1]
+
+
+def use_kev_from(root):
+    """Import the `kev` package from `root`, whatever else is on sys.path.
+
+    This runner lives in the delivery checkout and is started with `PYTHONPATH` pointing at the reference worktree, so
+    the order of sys.path decides which `kev` a process gets. Getting it wrong makes the comparison meaningless — both
+    processes would import the same package and could not detect a loader regression — so `--reference-root` is
+    inserted ahead of every other entry instead of trusting the environment. The runner's own directory stays importable
+    for `scripts.local_parity` itself."""
+    root = str(Path(root).resolve())
+    sys.path[:] = [p for p in sys.path if p not in ("", str(HERE), root)]
+    sys.path.insert(0, root)
+    return root
+
 
 # The synthetic requests. Identical bytes in both runs; a case's inputs must not depend on anything that changed.
 def cases():
@@ -50,25 +66,32 @@ def cases():
 def load_model(a):
     import torch
     from kev.checkpoint import Checkpoint, LoadOptions
-    from kev.local import load_registry, resolve
-    if a.mode == "local":
+    if a.mode == "local":   # only the configured-local run needs kev.local, which the baseline revision does not have
+        from kev.local import load_registry, resolve
         resolved = resolve(load_registry(a.config), a.task)
         ck, base_path = resolved.checkpoint, resolved.base_path
         source = {"repo": resolved.base_source, "revision": resolved.base_revision}
     else:
         ck, base_path = Checkpoint(a.checkpoint), None
-        source = {"repo": ck.meta.base_identity, "revision": ck.meta.base_revision}
-    # one thread, CPU, fp32, eager: the settings numbers are reported from, in both processes.
+        # the baseline revision predates Meta.base_identity, so read the identity the way that revision records it;
+        # head.pt of these checkpoints carries the Hub id, which is what the delivery's base_identity returns for it.
+        source = {"repo": ck.meta.base, "revision": ck.meta.base_revision}
+    # one thread, CPU, fp32, eager: the settings numbers are reported from, in both processes. The baseline revision
+    # has no LoadOptions.base_path, so it is only passed where the field exists — that is the change under test.
     torch.set_num_threads(1)
     torch.manual_seed(0)
-    opts = LoadOptions(dtype=torch.float32, attn="eager", backend="torch", base_path=base_path)
-    return ck.load("cpu", opts) + (ck, source)
+    opts = LoadOptions(dtype=torch.float32, attn="eager", backend="torch")
+    if base_path is not None:
+        opts = replace(opts, base_path=base_path)
+    return ck.load("cpu", opts) + (ck, source, base_path)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--mode", choices=("reference", "local"), required=True)
     ap.add_argument("--checkpoint", default=None, help="mode reference: the Kev checkpoint directory")
+    ap.add_argument("--reference-root", default=None,
+                    help="mode reference: the checkout whose kev package must be imported (default: PYTHONPATH's first kev)")
     ap.add_argument("--config", default=None, help="mode local: the machine-local JSON registry")
     ap.add_argument("--task", default=None, help="mode local: the task id")
     ap.add_argument("--out", required=True)
@@ -77,14 +100,22 @@ def main(argv=None):
         ap.error("--mode reference needs --checkpoint")
     if a.mode == "local" and not (a.config and a.task):
         ap.error("--mode local needs --config and --task")
+    if a.mode == "reference":
+        root = a.reference_root or next((p for p in sys.path if (Path(p) / "kev" / "checkpoint.py").is_file()), None)
+        if not root:
+            ap.error("--mode reference needs --reference-root (or PYTHONPATH naming a kev checkout)")
+        import kev
+        if use_kev_from(root) and Path(kev.__file__).resolve().parent != Path(root).resolve() / "kev":
+            ap.error(f"kev was already imported from {kev.__file__}; start a fresh process for the reference run")
 
     import torch
     from kev.api import SystemOneRequest, to_record
     from kev.model import admit
     from kev.predictors import kernel_environment
-    tok, model, ck, source = load_model(a)
+    tok, model, ck, source, base_path = load_model(a)
     body = {"mode": a.mode, "checkpoint": ck.path, "source": source,
-            "base_path": str(ck.base_path) if ck.base_path else None,
+            "base_path": str(base_path) if base_path else None,   # the baseline Checkpoint has no base_path
+            "imported_kev": str(Path(__import__("kev").__file__).resolve()),
             "checkpoint_files": {p.name: {"bytes": p.stat().st_size, "sha256": sha256(p)}
                                  for p in sorted(Path(ck.path).iterdir()) if p.is_file() and not p.name.startswith(".")},
             "head_keys": sorted(ck.meta.to_dict()),
