@@ -283,7 +283,8 @@ def verify_artifacts(registry, receipt, task_id=None):
     configured path trusts the acquisition-time verification, and every `source`/`revision` it reports is labelled a
     `pin`: the declaration the artifact was *acquired and verified* against, not a hash of the bytes read now."""
     from .suite import digest
-    receipt = json.loads(Path(receipt).read_text(encoding="utf-8"))
+    receipt_file = Path(receipt)
+    receipt = json.loads(receipt_file.read_text(encoding="utf-8"))
     effective = {model_id: resolved_meta(Checkpoint(str(registry.model(model_id).checkpoint.path)), registry.model(model_id).base)[1]
                  for model_id in _selected(registry, task_id)}
     checked = {}
@@ -297,25 +298,25 @@ def verify_artifacts(registry, receipt, task_id=None):
                         record = value
                         break
             if record is None:
-                raise LocalConfigError(f"{receipt}: no receipt entry for {kind} {entry.path}; acquire the artifact with "
+                raise LocalConfigError(f"{receipt_file}: no receipt entry for {kind} {entry.path}; acquire the artifact with "
                                        f"a recorded receipt before asking to verify it")
             required = set(REQUIRED[kind]) | _index_shards(entry.path)
             present = {name for name in required if (entry.path / name).is_file()}
             if missing := sorted(required - present):
-                raise LocalConfigError(f"{receipt}: {kind} {entry.path} does not hold {missing}; there is nothing to verify")
+                raise LocalConfigError(f"{receipt_file}: {kind} {entry.path} does not hold {missing}; there is nothing to verify")
             if uncovered := sorted(required - set(record.get("sha256") or {})):
-                raise LocalConfigError(f"{receipt}: the {kind} entry does not record {uncovered}, so it cannot vouch for "
+                raise LocalConfigError(f"{receipt_file}: the {kind} entry does not record {uncovered}, so it cannot vouch for "
                                        f"every file a load reads; record the complete payload")
             if record.get("repo") and record["repo"] != entry.source:
-                raise LocalConfigError(f"{receipt}: {kind} receipt says {record['repo']!r} but the registry pins {entry.source!r}")
+                raise LocalConfigError(f"{receipt_file}: {kind} receipt says {record['repo']!r} but the registry pins {entry.source!r}")
             revision = entry.revision if kind == "checkpoint" else (effective[model_id] or entry.revision)
             if record.get("revision") and revision and record["revision"] != revision:
-                raise LocalConfigError(f"{receipt}: {kind} receipt says revision {record['revision']} but this checkpoint "
+                raise LocalConfigError(f"{receipt_file}: {kind} receipt says revision {record['revision']} but this checkpoint "
                                        f"is pinned to {revision}")
             for name, want in sorted(record["sha256"].items()):
                 path = entry.path / name
                 if not path.is_file():
-                    raise LocalConfigError(f"{kind} {path} is missing, but {receipt} records it as acquired")
+                    raise LocalConfigError(f"{kind} {path} is missing, but {receipt_file} records it as acquired")
                 got = digest(path)
                 if got != want:
                     raise LocalConfigError(f"{kind} {path}: sha256 is {got}, the receipt records {want}; "

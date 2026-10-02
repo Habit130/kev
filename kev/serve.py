@@ -348,7 +348,7 @@ def main():
         try:
             registry = load_registry(a.config)
             resolved = resolve(registry, a.task)
-            verified = verify_artifacts(registry, a.receipt) if a.receipt else None
+            verified = verify_artifacts(registry, a.receipt, task_id=a.task) if a.receipt else None
         except LocalConfigError as exc:
             print(f"local inference error: {exc}", file=sys.stderr)
             return 2

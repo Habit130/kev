@@ -583,6 +583,27 @@ def test_integration_local_load_does_not_reach_the_network(monkeypatch):
 
 @pytest.mark.integration
 @pytestmark_integration
+def test_integration_serve_verifies_the_receipt_before_starting(tmp_path):
+    """`--receipt` on the serving entry point must do the same verification as the batch runner, including the base
+    revision head.pt records; a contradicted receipt stops the server before it binds, with a nonzero exit."""
+    from kev.suite import write_json
+    receipt = json.loads((ROOT / ".local/verification/local-inference/a1/acquisition.json").read_text(encoding="utf-8"))
+    resolved = resolve(load_registry(CONFIG), "support-triage-0.8b")
+    entry = next(v for v in receipt.values() if v.get("dest") == str(resolved.base_path))
+    entry["revision"] = "b" * 40
+    bad = tmp_path / "bad-receipt.json"
+    write_json(bad, receipt)
+    env = {**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
+    out = subprocess.run([sys.executable, "-m", "kev.serve", "--config", CONFIG, "--task", "support-triage-0.8b",
+                          "--receipt", str(bad), "--host", "127.0.0.1", "--port", "8099"],
+                         cwd=ROOT, capture_output=True, text=True, env=env, timeout=600)
+    assert out.returncode == 2, f"expected a refusal, got {out.returncode}: {out.stdout[-600:]}"
+    assert "is pinned to" in out.stderr and "bbbb" in out.stderr, out.stderr[-600:]
+    assert "Starting server" not in out.stderr + out.stdout
+
+
+@pytest.mark.integration
+@pytestmark_integration
 def test_integration_batch_cli_answers_the_synthetic_states(tmp_path):
     """The real batch CLI on the real checkpoint, one model at a time, with the Hub and Transformers offline."""
     env = {**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
