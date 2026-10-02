@@ -5,6 +5,11 @@ description: Write a Kev pull request title and body that teaches the reader why
 
 # Writing a Kev pull request
 
+Root `AGENTS.md` and `docs/agents/delivery.md` own this fork's delivery requirements.
+Use an English Conventional Commit title and the Motivation, Changes, Verification
+sections, with `Closes #<issue>` and the full evidence matrix. Historical examples below
+retain their original headings and subjects; they are not the current delivery template.
+
 A Kev PR is read by three people: the reviewer today, someone reading `git log` next year to learn why a number changed,
 and a reader who is not an ML researcher (an engineer integrating the API, a student, a curious normie). Write for the
 third one. If the description only makes sense to whoever wrote the diff, it is a changelog, not a PR.
@@ -57,14 +62,14 @@ last. Read a few before writing a big one:
 
 ## Kev specifics
 
-- The title is the squash commit subject. Write it as the change in a sentence, with the PLAN item when there is one:
-  `benchmark --rotations: test-time cyclic option averaging for Choice (round 4.4)`, not `Add rotations flag`.
-- Keep the `Test plan` checklist, last, as in the repo today. It is where the parity evidence from `kev-verify` goes
+- The title is the squash commit subject. Use English Conventional Commits, for example
+  `feat(benchmark): average cyclic Choice rotations`, with the PLAN reference in the body when relevant.
+- Keep the evidence checklist in `Verification`, last. It is where the parity evidence from `kev-verify` goes
   (byte-identical `rows.json` against main, weight-backed suites, measured latency). Evidence, not "tests pass".
 - If the change moves a published number, name the file the README or model card will cite.
 - No scaffolding headings with one bullet under them (`## Changes` -> a list of file names is the diff, again). No
   adjectives that do the reader's judging for them (robust, comprehensive, clean, significant without a CI).
-- Plain technical English (AGENTS.md > Writing). Address the reader; say "we" for decisions the project made and "I"
+- Plain technical English (`docs/agents/kev-reference.md` > Writing). Address the reader; say "we" for decisions the project made and "I"
   for the author's judgement calls, the way both authors do.
 
 ## Examples
@@ -142,3 +147,5 @@ One sentence of problem, one of reason for the bound. That is the whole body.
 - Is the decision rule written before the result?
 - Does "Test plan" carry evidence a reviewer could re-run?
 - Did you cut every sentence that only repeats the diff?
+- Does Verification cover every frozen BASE and ticket criterion, actual Codex status,
+  and any independent Acceptance handoff, without claiming unrun checks passed?

@@ -5,6 +5,12 @@ description: Extremely strict structural review of a Kev branch or PR (code-judo
 
 # Thermonuclear review, Kev edition
 
+This skill supplies structural observations within the frozen issue's diff and directly
+affected callers. Root `AGENTS.md` and `docs/agents/delivery.md` own blocking severity.
+Style, decomposition preferences, optional refactors, and stronger-than-contract tests
+are P2/P3 follow-up unless primary evidence establishes an introduced P0/P1. Review does
+not authorize edits, scope expansion, agent merge, or an Acceptance decision.
+
 A review for implementation quality, not correctness: abstraction quality, maintainability, codebase health. Behaviour
 is assumed to be checked elsewhere (`kev-verify`). Be ambitious: do not stop at local cleanups. Look for the "code
 judo" move, a restructuring that keeps behaviour and makes the change dramatically smaller, more direct and more
@@ -35,7 +41,7 @@ this file); the second half is what a reviewer needs to apply them to this repos
    paper over an unclear invariant. Prefer an explicit typed model or shared contract; make the boundary explicit so the
    control flow gets simpler.
 7. **Logic in its canonical layer; reuse existing helpers.** Feature logic leaking into shared paths, implementation
-   details leaking through APIs, and bespoke near-duplicates of an existing utility are all blockers. Move the code to
+   details leaking through APIs, and bespoke near-duplicates of an existing utility are findings. Move the code to
    the module that already owns the concept (table below).
 8. **Orchestration smells.** Independent work serialised for no reason, and related updates that can leave state
    half-applied, are design smells when a cleaner atomic or parallel structure is obvious. Do not micro-optimise.
@@ -52,22 +58,23 @@ have; can we reuse the canonical one?", "there is a code-judo move here; can we 
 
 ### Approval bar
 
-Do not approve because behaviour seems correct. Approve when there is no clear structural regression, no visible path
-to a dramatically simpler implementation left untaken, no unjustified file-size explosion, no spaghetti growth from
-special-case branching, no hacky or magical abstraction, no wrapper / cast / optionality churn hiding the real design,
-and no boundary leak or canonical-helper duplication. Each of those is a presumptive blocker until the author justifies
-it. Otherwise leave explicit, actionable feedback and push for the cleaner decomposition. Say plainly when something is
-fine.
+Describe structural quality independently of behavior checks. Look for structural regressions,
+missed simplifications, file-size growth, scattered branching, hidden assumptions, and
+boundary leaks or canonical-helper duplication. These observations are not presumptive
+merge blockers. State trigger, impact, primary evidence, and a safe path before assigning
+P0/P1; independent Acceptance confirms that severity. Otherwise leave actionable,
+non-blocking feedback for a separately scoped follow-up. Say plainly when something is fine.
 
 ## How to run it here
 
 1. Get the diff (`git diff main...<branch>` or `gh pr diff <n>`) and read every changed file in full, not just hunks.
    The previous version of a file is `git show main:<path>`; for a reviewer without a shell, keep an `origin/main`
-   worktree (e.g. `/tmp/kev-main`) and read the old file from there.
+   worktree allocated under ignored `.local/worktrees/` and read the old file from there.
 2. Read the callers of anything the diff touches (`grep` the symbol across `kev/`, `scripts/`, `space/`, `tests/`,
    `modal_app.py`, `playground/src`).
 3. Check the canonical-helpers table below before accepting a new helper: a second copy of a rule that has a home is a
-   blocker, not a nit. `tests/test_conventions.py` enforces several rows.
+   canonical-home violation to examine. `tests/test_conventions.py` enforces several rows;
+   do not label every duplication P0/P1 without evidence of consequential impact.
 4. Ask for the parity evidence the `kev-verify` skill describes (bit-identical rows / weights against `main`) whenever the
    diff touches the model, loader, trainer, data converters or metrics. Green tests are not parity.
 5. Report findings in the priority order above with `file:line` references, then an explicit verdict against the

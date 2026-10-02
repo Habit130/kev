@@ -3,9 +3,17 @@ name: kev-modal-study
 description: Launch, monitor and pull Kev training studies, untrained-base probes, remote benchmarks and new-base smoke checks on Modal (modal_app.py). Use when running trials, delta fine-tunes, base probes, external evals or fit checks for the Kev repo.
 ---
 
-# Kev on Modal — study workflow
+# Kev on Modal study workflow
 
-All GPU work in this repo goes through `modal_app.py`. Never train large models locally (a 32 GB Mac swaps with an 8B in bf16 while Chrome is open).
+Root `AGENTS.md` and the frozen issue own authorization. Confirm habit's account, budget,
+target app, study/run names, volume paths, and exclusive watcher/pull ownership before
+cloud work. Upstream names below are reference defaults, not resources owned by this fork.
+Model/endpoint publication and any checkpoint, snapshot, volume, or app deletion need
+explicit target-specific authorization. Never read or output credential values.
+
+Cloud research GPU work goes through `modal_app.py`. Local small-model inference is a
+separate path. Never infer large-training capacity from upstream machine measurements;
+confirm capacity and task authorization before training.
 
 ## Studies (training trials): `modal_app.py`
 
@@ -14,7 +22,10 @@ All GPU work in this repo goes through `modal_app.py`. Never train large models 
 2. **Deploy if `kev/*.py` changed** (the launcher refuses otherwise: "deployed app has different kev/*.py"): `uv run modal deploy modal_app.py`. Redeploying while trials run is safe — in-flight containers keep their image — but wait for trials that are seconds from finishing if you can.
 3. **Launch** (each trial is spawned as its own call on the deployed app; survives disconnects):
    `uv run modal run modal_app.py::study --suite evals/v7/decision-v7 --plan experiments/X.json --name X --transfer evals/v4/transfer-v4 --budget 30 --timeout 5400`
-   Names are immutable: a failed study needs a new name (`X2`). Timeout max 28800 (a 27B), budget max $250 per study (`modal_app.admit_study`). Bound cost is printed; H100 ≈ $3.95/h.
+   Names are immutable: a failed study needs a new name (`X2`). LoRA studies permit at
+   most 28,800 s and $250. Full-weight studies permit 86,400 s per attempt and $1,000,
+   counting continuations and actual CPU/memory/disk resources. `kev/budget.py` owns
+   these bounds; they are admission limits, not habit's spending authorization.
 4. **Monitor**: `uv run modal app logs kev-research | grep -a -E "step .*/|evaluated|Error" | tail`. Per-trial status without logs:
    ```python
    import json, modal
@@ -23,11 +34,12 @@ All GPU work in this repo goes through `modal_app.py`. Never train large models 
        try: print(name, fc.get(timeout=1)["clean_acc"])
        except TimeoutError: print(name, "running")
    ```
-   A trial's own log: `uv run modal volume get kev-runs /X/00-trial-0/train.log /tmp/x.log --force`.
+   A trial's own log can be pulled into a newly allocated `.local/` path. Confirm the
+   actual volume and avoid `--force` on a file another session owns.
 5. **Pull** when done (safe to repeat while trials are still finishing: a second pull keeps the trial directories that have a `result.json`, deletes and re-fetches the ones that do not (copies taken mid-run), prints which are still running and re-ranks): `uv run modal run modal_app.py::pull --name X` → `runs/X/<trial>/{result.json, provenance.json, checkpoint/, transfer/rows.json}`. Full-weight backbone shards (`model*.safetensors` in `checkpoint/` and `snapshots/`, ~51 GB each for a 27B) and resume points stay on the volume (`modal_app.pulled`); `head.pt`, configs, tokenizer, LoRA adapters, results and rows come down. `--weights` copies everything. Reads and benchmarks run on the volume paths, so nothing needs the local shards. Then `PYTHONPATH=. uv run python scripts/compare_q35.py` or a paired bootstrap (`kev.metrics.paired_bootstrap(rows_a, rows_b, metric="acc")`) against the released checkpoint's `transfer/rows.json`.
 6. **Locked test** (once per candidate, selected on dev only): `uv run modal run --detach modal_app.py::locked_test --trial X/00-trial-0 --name <candidate> --decision evals/v7/decision-v7`; result at volume `/locked/<candidate>/summary.json`. Defaults are 3,600 s and 48 GB host memory; a 27B needs `--gpu H200 --timeout 14400 --memory-mb 131072` (bf16 weights are staged through host memory while loading).
 
-Timing (H100, row-batched hybrid): 0.8B ≈ 20 min, 4B ≈ 60 min, 9B ≈ 90 min for the full v7 recipe; deltas (1 epoch over ~1k records + 2k replay) ≈ 10–20 min. Set `--timeout` with ≥ 50 % headroom; a timed-out container loses everything.
+Timing (H100, row-batched hybrid): 0.8B ≈ 20 min, 4B ≈ 60 min, 9B ≈ 90 min for the full v7 recipe; deltas (1 epoch over ~1k records + 2k replay) ≈ 10–20 min. Set `--timeout` with ≥ 50 % headroom. LoRA timeouts can lose unfinished work; full-weight trials continue from committed resume points within their attempt ledger.
 
 ## Rounds (registered experiments): `kev.rounds`
 
@@ -71,7 +83,7 @@ log; all three skip names that already exist locally / on the volume.
   Full-weight studies: plans set `full_ft: 1, weights_dtype: bf16` (the trainer then shares each state across its
   questions, `shared_prefix`, and writes a resume point every `kev.experiment.RESUME_MINUTES`); `admit_study` asks for
   `kev.budget.trial_resources` (one GPU: 24 CPU, 360-400 GiB for the host-side masters; `--gpu H200:8`: 16 CPU,
-  128-256 GiB), allows `--timeout` up to 86,400 s and a $1,000 budget, and counts `FULL_FT_RETRIES` continuations per
+  400-460 GiB), allows `--timeout` up to 86,400 s and a $1,000 budget, and counts `FULL_FT_RETRIES` continuations per
   trial. Modal's retries are off (it charged a killed timed-out attempt twice: `scripts/modal_retry_probe.py`); a timed-out
   trial is continued by `kev.rounds watch` through `modal_app.py::resume --trial <label>` (`modal_app.continue_full_trial`:
   a new call, only after the last one ended by a timeout, counted in `runs/<study>.spawn.json`'s `attempts`, with the
@@ -106,8 +118,8 @@ log; all three skip names that already exist locally / on the volume.
 ## Gotchas
 - "deployed app has different kev/*.py" **right after a deploy**: a warm `remote_source_hashes` container from the previous image answered the check. Stop the app's idle containers (`modal container list --json`, then `modal container stop -y <id>` for that app; they are the 1-CPU hash checks, not trials) and relaunch. A research deployment isolated with `KEV_APP_NAME=<name>` must use the same variable on `deploy` and `study`.
 - Redirect `modal run ...::study` to a log file rather than filtering it through `rg`/`head`: a filter can hide the `SystemExit` that explains why nothing was spawned.
-- If `study` dies locally with a transient error (e.g. `Authorization check failed`) the trials may already have been spawned on the deployed app: run `modal container list` before relaunching, and never relaunch under the same name (the trials refuse to overwrite `/runs/<name>/<trial>` and every copy fails). To kill a running trial use `FunctionCall.from_id(cid).cancel()` from the spawn.json; `modal container stop` only re-queues the input to a fresh container. Orphans without a spawn.json: `modal volume rm -r kev-runs /<name>` after they fail, then relaunch under a new name.
-- Wall-clock check in the first 5 minutes: count optimizer steps/min from `modal container logs` and divide the printed denominator by it (`ep0 step N/M` — **M is the total optimizer steps over all epochs**, not per epoch); the printed `s/rec` is compute only and undercounts by 2-4× on MoE bases. Cancel and relaunch with fewer epochs if it will not fit the cap — a timed-out trial saves nothing.
+- If `study` dies locally with a transient error (e.g. `Authorization check failed`) the trials may already have been spawned on the deployed app: run `modal container list` before relaunching, and never relaunch under the same name (the trials refuse to overwrite `/runs/<name>/<trial>` and every copy fails). To cancel an authorized running trial use `FunctionCall.from_id(cid).cancel()` from the spawn.json; `modal container stop` only re-queues the input to a fresh container. For orphans without a spawn.json, establish the owner and exact volume path, preserve the files, and ask habit before any removal; a failed job does not authorize deletion of a checkpoint or snapshot.
+- Wall-clock check in the first 5 minutes: count optimizer steps/min from `modal container logs` and divide the printed denominator by it (`ep0 step N/M`, where M is the total optimizer steps over all epochs, not per epoch); the printed `s/rec` is compute only and undercounts by 2-4× on MoE bases. Report a projected overrun. Changing epochs, data, timeout, or budget in a registered recipe needs a new contract and registration; full-weight timeout continuations retain the recipe and use the existing ledger.
 - `--gpu H200` on `study` only works if the deployed app was deployed with `KEV_GPU=H200` (the GPU is fixed at deploy time); deploy H200, launch, then redeploy H100 for the small jobs.
 - Symptom "config=... printed, then nothing, and `Modal Client → Modal Worker Heartbeat attempt failed`" = the container is thrashing host memory (checkpoint staging). Check `run_trial`'s `memory=` against the checkpoint size (bf16 bytes ≈ 2 × params); big bases need ≥ weights + 20 GB.
 - Training progress is only visible via `modal container logs <ta-id>` (`modal container list` to find it); `modal app logs` shows the last ~50 lines across containers, and the volume's train.log is committed at the end.
@@ -117,4 +129,5 @@ log; all three skip names that already exist locally / on the volume.
 - `RuntimeError: aclose(): asynchronous generator is already running` at the end of a detached run is noise; the result line follows it.
 - Report dicts must not gain top-level keys that collide with benchmark blocks (`unknowable`, `clean`, `tasks`).
 - Modal's HF cache volume (`kev-hf-cache`) persists base weights; first pull of a new base adds minutes.
-- Jev calls go through Vercel AI Gateway (`kev.jev`); the key is created with `vercel ai-gateway keys create` (no `--scope`) and kept in the environment only.
+- Jev calls go through Vercel AI Gateway (`kev.jev`). habit provisions credentials outside
+  the agent workflow; verify the authorized endpoint and budget without reading key values.
