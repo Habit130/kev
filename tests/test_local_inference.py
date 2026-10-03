@@ -1,5 +1,6 @@
-"""The configured local inference contract (issue #3, AC-3-v1): strict offline resolution, both task presets, the
-batch CLI, and the separate-process fp32 parity check against a read-only baseline.
+"""The configured local inference contract (issue #3): strict offline resolution, both task presets, the
+batch CLI, the separate-process fp32 parity check against a read-only baseline, and the MLX empty-cache
+regression (AC-3-v2).
 
 Unit cases build a synthetic registry plus a tiny config-only artifact, so they run with no weights and no network.
 They cover the negative paths the contract names: unknown model/task, a missing or incomplete artifact, a source or
@@ -17,6 +18,8 @@ Integration cases are opt-in and need real local artifacts:
 `-k integration` runs the real-weight load, the batch CLI, and the two-process parity check. When the config or the
 reference tree is absent they skip with that reason; an explicitly requested integration run must not pass by
 skipping every case, so CI selection excludes them with `-k 'not integration'`.
+`-k 'integration and mlx'` runs the native MLX loads (`auto` and explicit `mlx`) against an empty Hub cache.
+Those cases must not pass by skipping when a real config is supplied.
 """
 import json
 import os
@@ -367,6 +370,72 @@ def test_a_load_with_its_own_base_does_not_leak_into_the_next_one(tmp_path, monk
     no_network.check()
 
 
+def test_mlx_architecture_check_uses_the_call_scoped_local_base(tmp_path, monkeypatch, no_network):
+    """AC-3-v2: `_load_mlx` must hand this call's local base to `hybrid_base`. Dropping it asks AutoConfig for the Hub
+    id in head.pt, even though the registry supplied a directory, and the call must not leave that directory on the
+    instance for the next load."""
+    import types
+    import kev.checkpoint as C
+    from kev.checkpoint import LoadOptions
+    offline(monkeypatch)
+    path, _, local = registry_file(tmp_path)
+    resolved = resolve(load_registry(path), "task-a")
+    ck = resolved.checkpoint
+    assert ck.base_path is None
+    calls = []
+
+    class _Text:
+        layer_types = ["linear_attention"]
+
+    class _Config:
+        def get_text_config(self):
+            return _Text()
+
+    def from_pretrained(*args, **kwargs):
+        name = args[-1] if args and isinstance(args[0], type) else args[0]
+        calls.append((str(name), kwargs.get("revision")))
+        return _Config()
+
+    monkeypatch.setattr("transformers.AutoConfig.from_pretrained", from_pretrained)
+    monkeypatch.setattr(C, "load_tokenizer", lambda name, revision=None: types.SimpleNamespace(pad_token_id=0))
+    monkeypatch.setattr(C, "mlx_available", lambda: True)
+    loaded = []
+    fake = types.ModuleType("kev.mlx_model")
+
+    class _MLX:
+        backend = "mlx"
+
+        class head:
+            temperature = 1.0
+
+            @staticmethod
+            def load_state_dict(state):
+                return None
+
+        def __init__(self, lm, pad_id, head_dim=256):
+            self.lm = lm
+
+        def eval(self):
+            return self
+
+    fake.MLXDecisionModel = _MLX
+    fake.load_base = lambda base_dir: loaded.append(str(base_dir)) or object()
+    fake.load_full = lambda *args, **kwargs: object()
+    fake.merge_lora = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "kev.mlx_model", fake)
+    for backend in ("auto", "mlx"):
+        calls.clear()
+        loaded.clear()
+        ck.load("mps", resolved.load_options(LoadOptions(backend=backend)))
+        assert loaded == [str(local)], loaded
+        assert calls and all(name == str(local) and revision is None for name, revision in calls), calls
+        assert ck.base_path is None, "the instance must not retain the call's directory"
+    calls.clear()
+    assert ck.hybrid_base() is True
+    assert calls == [(BASE_REPO, BASE_SHA)], calls   # no retained directory: the next check is the legacy Hub id
+    no_network.check()
+
+
 class _Fake:
     """The minimum kev.checkpoint.load touches after building the backbone."""
 
@@ -655,6 +724,136 @@ def test_integration_offline_native_weight_load_uses_the_local_base(monkeypatch)
         {"instr": "Which team should handle this ticket?", "options": ["returns", "shipping", "billing"], "label": 0}]})
     probs = model.probs(enc)[0]
     assert abs(float(sum(probs)) - 1.0) < 1e-4 and all(0.0 <= float(p) <= 1.0 for p in probs)
+
+
+# A fresh interpreter: HF cache constants are fixed at import, and a populated parent cache would hide a Hub-id lookup.
+_MLX_EMPTY_CACHE_PROBE = r"""
+import json, os, socket, sys, traceback
+from pathlib import Path
+
+connects = []
+_RealSocket = socket.socket
+
+class _Sentinel(_RealSocket):
+    def connect(self, address):
+        connects.append({"op": "connect", "address": repr(address)})
+        raise OSError(f"mlx empty-cache regression refused connect to {address!r}")
+
+    def connect_ex(self, address):
+        connects.append({"op": "connect_ex", "address": repr(address)})
+        raise OSError(f"mlx empty-cache regression refused connect_ex to {address!r}")
+
+def _refuse(op):
+    def inner(*args, **kwargs):
+        connects.append({"op": op, "args": repr(args)})
+        raise OSError(f"mlx empty-cache regression refused {op}")
+    return inner
+
+socket.socket = _Sentinel
+socket.create_connection = _refuse("create_connection")
+socket.getaddrinfo = _refuse("getaddrinfo")
+
+from transformers import AutoConfig
+import kev.mlx_model as mlx_model
+from kev.checkpoint import LoadOptions
+from kev.local import load_registry, resolve
+
+calls = []
+_orig = AutoConfig.from_pretrained
+
+def _recording(cls, name, *args, **kwargs):
+    calls.append({"name": str(name), "revision": kwargs.get("revision")})
+    return _orig.__func__(cls, name, *args, **kwargs)
+
+AutoConfig.from_pretrained = classmethod(_recording)
+base_loads = []
+_load_base = mlx_model.load_base
+
+def _recording_load_base(base_dir):
+    base_loads.append(str(base_dir))
+    return _load_base(base_dir)
+
+mlx_model.load_base = _recording_load_base
+config = os.environ["KEV_LOCAL_INFERENCE_CONFIG"]
+backend = os.environ["KEV_MLX_PROBE_BACKEND"]
+out_path = Path(os.environ["KEV_MLX_PROBE_OUT"])
+hf = Path(os.environ["HF_HOME"])
+resolved = resolve(load_registry(config), "support-triage-0.8b")
+opts = resolved.load_options(LoadOptions(backend=backend))
+head = Path(resolved.checkpoint.path) / "head.pt"
+before = head.read_bytes()
+result = {
+    "backend_requested": backend,
+    "registry_base": str(resolved.base_path),
+    "meta_base": resolved.checkpoint.meta.base,
+    "instance_base_path_before": None if resolved.checkpoint.base_path is None else str(resolved.checkpoint.base_path),
+    "opts_base_path": str(opts.base_path),
+}
+try:
+    tok, model = resolved.checkpoint.load("mps", opts)
+    enc = model.encode(tok, {"state": "The tracking page has not moved in six days.", "questions": [
+        {"instr": "Which team should handle this ticket?", "options": ["returns", "shipping", "billing"], "label": 0}]})
+    probs = [float(p) for p in model.probs(enc)[0]]
+    result.update(load="returned", model_backend=model.backend, model_local=bool(model.local),
+                  prob_sum=sum(probs), probs_finite=all(p == p and abs(p) != float("inf") for p in probs),
+                  probs_bounded=all(0.0 <= p <= 1.0 for p in probs))
+except Exception as exc:
+    result.update(load="raised", error=f"{type(exc).__name__}: {exc}", traceback=traceback.format_exc(limit=20))
+
+def _hub(call):
+    return not str(call["name"]).startswith("/") and "/" in str(call["name"])
+
+result["auto_config_calls"] = calls
+result["hub_id_config_calls"] = [c for c in calls if _hub(c)]
+result["load_base"] = base_loads
+result["connects"] = connects
+result["head_unchanged"] = head.read_bytes() == before
+result["instance_base_path_after"] = None if resolved.checkpoint.base_path is None else str(resolved.checkpoint.base_path)
+result["empty_cache_files"] = [str(p.relative_to(hf)) for p in hf.rglob("*") if p.is_file()] if hf.exists() else []
+out_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+local = str(resolved.base_path)
+ok = (result.get("load") == "returned" and result.get("model_backend") == "mlx" and result.get("model_local") is True
+      and not result["hub_id_config_calls"] and not connects and base_loads == [local]
+      and result["instance_base_path_before"] is None and result["instance_base_path_after"] is None
+      and result["head_unchanged"] and not result["empty_cache_files"] and calls
+      and all(c["name"] == local and c["revision"] is None for c in calls)
+      and abs(result.get("prob_sum", 0) - 1.0) < 1e-3 and result.get("probs_finite") and result.get("probs_bounded"))
+sys.exit(0 if ok else 2)
+"""
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("backend", ["auto", "mlx"])
+@pytestmark_integration
+def test_integration_mlx_empty_cache_does_not_resolve_a_hub_id(tmp_path, backend):
+    """Native MLX, configured local base, no usable Hub cache. `auto` and explicit `mlx` must both load the registry
+    directory; a prepopulated cache link is not this test. The child sets HF_HOME before importing huggingface."""
+    hf = tmp_path / "empty-hf"
+    hf.mkdir()
+    out = tmp_path / "result.json"
+    env = os.environ.copy()
+    for key in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HF_HUB_TOKEN"):
+        env.pop(key, None)
+    env.update(HF_HOME=str(hf), HF_HUB_CACHE=str(hf / "hub"), HF_XET_CACHE=str(hf / "xet"),
+               HUGGINGFACE_HUB_CACHE=str(hf / "hub"), TRANSFORMERS_CACHE=str(hf / "transformers"),
+               HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", HF_HUB_DISABLE_IMPLICIT_TOKEN="1",
+               HF_HUB_DISABLE_TELEMETRY="1", HF_HUB_DISABLE_PROGRESS_BARS="1", TOKENIZERS_PARALLELISM="false",
+               KEV_LOCAL_INFERENCE_CONFIG=CONFIG, KEV_MLX_PROBE_BACKEND=backend, KEV_MLX_PROBE_OUT=str(out))
+    proc = subprocess.run([sys.executable, "-c", _MLX_EMPTY_CACHE_PROBE], cwd=ROOT, env=env,
+                          capture_output=True, text=True, timeout=600)
+    result = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
+    detail = json.dumps({k: result.get(k) for k in ("error", "hub_id_config_calls", "load_base", "connects", "empty_cache_files", "traceback")}, indent=2)
+    assert proc.returncode == 0, detail + "\n" + proc.stderr[-2000:]
+    resolved = resolve(load_registry(CONFIG), "support-triage-0.8b")
+    assert result["hub_id_config_calls"] == []
+    assert result["connects"] == []
+    assert result["load_base"] == [str(resolved.base_path)]
+    assert result["auto_config_calls"] and all(c["name"] == str(resolved.base_path) and c["revision"] is None for c in result["auto_config_calls"])
+    assert result["model_backend"] == "mlx" and result["model_local"] is True
+    assert result["instance_base_path_before"] is None and result["instance_base_path_after"] is None
+    assert result["head_unchanged"] is True
+    assert result["empty_cache_files"] == [] and not any(p.is_file() for p in hf.rglob("*"))
+    assert abs(result["prob_sum"] - 1.0) < 1e-3 and result["probs_finite"] and result["probs_bounded"]
 
 
 @pytest.mark.integration

@@ -315,7 +315,8 @@ class Checkpoint:
         full = self.full
         if not full and not opts.merge: raise ValueError("the MLX backend always merges the adapter (KEV_MERGE=0 needs backend=torch)")
         if self.meta.option_isolation: raise ValueError("option_isolation needs the packed mask; not available on the MLX backend")
-        if not self.hybrid_base(): raise ValueError(f"the MLX backend is for the hybrid (Qwen3.5) bases; {self.path if full else self.meta.base} is attention-only and runs on MPS with backend=torch")
+        # this call's directory, not self.base_path: configured local mode must not ask AutoConfig for head.pt's Hub id
+        if not self.hybrid_base(base_path): raise ValueError(f"the MLX backend is for the hybrid (Qwen3.5) bases; {self.path if full else self.meta.base} is attention-only and runs on MPS with backend=torch")
         dtype = self.saved_dtype() if full else None
         from .mlx_model import MLXDecisionModel, load_base, load_full, merge_lora
         if full:

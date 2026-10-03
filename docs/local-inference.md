@@ -205,6 +205,11 @@ KEV_LOCAL_INFERENCE_CONFIG="$PWD/.local/local-inference.json" \
 KEV_REFERENCE_ROOT="$PWD/.local/worktrees/kev-main-local-inference" \
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   .local/bin/uv run --frozen --extra serve python -m pytest tests/test_local_inference.py -q -k integration
+
+# native MLX, auto and explicit mlx, with an empty Hub cache (a populated cache does not count)
+KEV_LOCAL_INFERENCE_CONFIG="$PWD/.local/local-inference.json" \
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  .local/bin/uv run --frozen --extra serve python -m pytest tests/test_local_inference.py -q -k 'integration and mlx'
 ```
 
 Parity is exact, not tolerance-based: both processes score the same synthetic requests on CPU in fp32
