@@ -72,9 +72,35 @@ class Meta:
     def to_dict(self):
         return {**self.extra, **{k: getattr(self, k) for k in self.KNOWN}}   # known fields win over a stray key in extra
 
+    @property
+    def base_identity(self):
+        """The base this checkpoint was trained on. `base` is either the Hub repo id it asked for or the local path it
+        was built from (`kev.model.base_identity` unwinds the second form). Which one is `base_revision`'s business."""
+        from .model import base_identity
+        return base_identity(self.base)
+
+
+COMMIT = re.compile(r"[0-9a-f]{40}")   # a full lowercase commit; a branch or tag is not a pin
+
+
+def require_commit_revision(revision, what):
+    """`revision` must be a full commit, whoever supplied it. head.pt is as able as a registry entry to record `main`, a
+    tag or a short hash, and such a "pin" can move under a checkpoint that claims it."""
+    if revision is not None and COMMIT.fullmatch(str(revision)) is None:
+        where = f"{what}: " if what else ""
+        raise ValueError(f"{where}revision {revision!r} is not a full commit ({COMMIT.pattern}); "
+                         f"a branch, tag or short hash is not an immutable pin")
+    return revision
+
 
 def read_meta(run):
     return Meta.from_dict(torch.load(f"{run}/head.pt", map_location="cpu"))
+
+
+def base_weights(directory):
+    """The backbone safetensors of a base directory, sorted: the loader rule's base-side form (Checkpoint.shards is the
+    same rule for a checkpoint). Used to tell a complete local base acquisition from an empty directory."""
+    return sorted(Path(directory).glob("model*.safetensors"))
 
 
 def write_meta(run, meta):
@@ -117,6 +143,9 @@ class LoadOptions:
     fused        rewrite a merged hybrid backbone on CUDA with fused Triton kernels (kev.fused_qwen35; needs
                  flash-linear-attention fused_qwen35.FLA_VERSION and refuses any other). None = off; kev.serve turns it on
                  for CUDA when fused_available() (KEV_FUSED=0 to decline). Equal to the reference layers up to bf16 rounding.
+    base_path    the local directory holding the base weights, when explicit local mode resolved it (kev.local). None =
+                 the base is fetched by `base`/`base_revision` through the Hub cache, the legacy path. A base directory
+                 is never sought anywhere else: with base_path set, this loader cannot download or substitute a base.
     """
     dtype: torch.dtype | None = None
     merge: bool = True
@@ -126,6 +155,7 @@ class LoadOptions:
     backend: str | None = None
     cuda_graphs: bool | None = None
     fused: bool | None = None
+    base_path: Path | None = None
 
     BACKENDS = (None, "torch", "mlx", "auto")
 
@@ -167,10 +197,20 @@ def fused_available():
 
 
 class Checkpoint:
-    def __init__(self, run):
+    """A local run directory or a Hub repo holding a LoRA adapter (or, for a full-weight run, the whole bf16 backbone),
+    `head.pt` and the tokenizer. `_base_path` is the local base directory configured local mode resolved (kev.local);
+    None means the base is fetched by the Hub id and revision in head.pt, the legacy path. It is set once, so a loader
+    never searches for a third location."""
+
+    _base_path = None
+
+    def __init__(self, run, base_path=None):
+        """base_path: the local base directory to read this checkpoint's base from (configured local mode, kev.local).
+        None = resolve the base the legacy way, by the Hub id and revision in head.pt."""
         self.requested = str(run)                    # what the caller asked for (a Hub id stays a Hub id in labels)
         self.path = resolve_run(run)
         self.meta = read_meta(self.path)
+        self._base_path = Path(base_path) if base_path is not None else None
 
     def file(self, name):
         return Path(self.path) / name
@@ -216,32 +256,58 @@ class Checkpoint:
         stamp = next((t for t in [self.file("head.pt").stat().st_mtime, *files] if t >= MTIME_FLOOR), None)
         return "unknown" if stamp is None else datetime.datetime.fromtimestamp(stamp, datetime.timezone.utc).date().isoformat()
 
-    def hybrid_base(self):
+    def hybrid_base(self, base_path=None):
         """Whether the backbone has Gated DeltaNet layers (Qwen3.5), read from a config without loading weights: the base's
-        for a LoRA adapter, the checkpoint's own config.json for full weights (the backbone that is actually loaded)."""
+        for a LoRA adapter (from `base_path` when configured local mode named one), the checkpoint's own config.json for
+        full weights (the backbone that is actually loaded)."""
         from transformers import AutoConfig
-        config = AutoConfig.from_pretrained(self.path) if self.full else AutoConfig.from_pretrained(self.meta.base, revision=self.meta.base_revision)
+        config = AutoConfig.from_pretrained(self.path) if self.full else self.base_config(base_path)
         return is_hybrid(config.get_text_config())
 
-    def backend(self, device, opts=LoadOptions()):
+    def base_config(self, base_path=None):
+        """The base's config for a LoRA adapter: `base_path` (or this checkpoint's own, when it was built locally), else
+        the Hub base at `base_revision` through the cache."""
+        from transformers import AutoConfig
+        local = base_path or self.base_path
+        if not self.full:
+            return AutoConfig.from_pretrained(str(local) if local else self.meta.base,
+                                              revision=None if local else self.meta.base_revision)
+        return AutoConfig.from_pretrained(self.path)
+
+    @property
+    def base_path(self):
+        """The local base directory this checkpoint reads its base from, or None for the Hub id in head.pt."""
+        return self._base_path
+
+    def backend(self, device, opts=LoadOptions(), base_path=None):
         """The backend `load` will use: LoadOptions.backend resolved ("auto" -> mlx only where it pays and is installed)."""
         if opts.backend not in LoadOptions.BACKENDS: raise ValueError(f"unknown backend {opts.backend!r}")
         if opts.backend != "auto": return opts.backend or "torch"
         exact = opts.dtype is torch.float32   # KEV_DTYPE=fp32: the caller wants the reported-numbers path, not a faster one
-        return "mlx" if str(device) == "mps" and not exact and mlx_available() and self.hybrid_base() else "torch"
+        return "mlx" if str(device) == "mps" and not exact and mlx_available() and self.hybrid_base(base_path) else "torch"
 
     def load(self, device, opts=LoadOptions()):
         """-> (tokenizer, model) in eval mode with the LoRA applied (or the full backbone loaded) and the pointer head loaded. The model is a
-        DecisionModel (torch) or an MLXDecisionModel (backend mlx); both expose the same scoring interface."""
+        DecisionModel (torch) or an MLXDecisionModel (backend mlx); both expose the same scoring interface. An explicit
+        opts.base_path (configured local mode) is resolved here, before the backend is chosen, and never reaches the Hub."""
         meta = self.meta
         if self.full and opts.lora_scale != 1: raise ValueError("lora_scale interpolates an adapter; a full-weight checkpoint has none")
-        tok = load_tokenizer(meta.base, revision=meta.base_revision)
-        m = self._load_mlx(tok, opts) if self.backend(device, opts) == "mlx" else self._load_torch(tok, device, opts)
+        # the base directory belongs to this call: opts.base_path if given, else the one this Checkpoint was built with.
+        # It is never written to the instance, so a later load with default options cannot inherit it.
+        base_path = Path(opts.base_path) if opts.base_path is not None else self.base_path
+        if base_path is not None and not base_path.is_dir():
+            raise ValueError(f"configured local base directory {base_path} does not exist")
+        tok = load_tokenizer(str(base_path) if base_path else meta.base,
+                             revision=None if base_path else meta.base_revision)
+        if self.backend(device, opts, base_path) == "mlx":
+            m = self._load_mlx(tok, opts, base_path)
+        else:
+            m = self._load_torch(tok, device, opts, base_path)
         m.head.load_state_dict(meta.head); m.eval()
         m.head.temperature = meta.temperature if opts.temperature is None else opts.temperature
         return tok, m
 
-    def _load_mlx(self, tok, opts):
+    def _load_mlx(self, tok, opts, base_path=None):
         """-> MLXDecisionModel. A LoRA checkpoint: the base's mlx-lm model with the adapter merged (fp32, one rounding). A
         full-weight checkpoint: mlx-lm's model built from the checkpoint's own config and shards in the dtype head.pt names
         (kev.mlx_model.load_full; strict names/shapes/dtype), nothing merged. Refusals come before the mlx-lm import, which
@@ -249,18 +315,21 @@ class Checkpoint:
         full = self.full
         if not full and not opts.merge: raise ValueError("the MLX backend always merges the adapter (KEV_MERGE=0 needs backend=torch)")
         if self.meta.option_isolation: raise ValueError("option_isolation needs the packed mask; not available on the MLX backend")
-        if not self.hybrid_base(): raise ValueError(f"the MLX backend is for the hybrid (Qwen3.5) bases; {self.path if full else self.meta.base} is attention-only and runs on MPS with backend=torch")
+        # this call's directory, not self.base_path: configured local mode must not ask AutoConfig for head.pt's Hub id
+        if not self.hybrid_base(base_path): raise ValueError(f"the MLX backend is for the hybrid (Qwen3.5) bases; {self.path if full else self.meta.base} is attention-only and runs on MPS with backend=torch")
         dtype = self.saved_dtype() if full else None
         from .mlx_model import MLXDecisionModel, load_base, load_full, merge_lora
         if full:
             lm = load_full(self.path, self.shards(), dtype)
         else:
-            lm = load_base(resolve_run(f"{self.meta.base}@{self.meta.base_revision or ''}"))   # the base snapshot the torch path already cached
+            lm = load_base(str(base_path) if base_path else resolve_run(f"{self.meta.base}@{self.meta.base_revision or ''}"))   # the base snapshot the torch path already cached
             merge_lora(lm, self.path, opts.lora_scale)
-        return MLXDecisionModel(lm, pad_id(tok), head_dim=self.meta.head_dim)
+        m = MLXDecisionModel(lm, pad_id(tok), head_dim=self.meta.head_dim)
+        m.local = bool(base_path or self.base_path)
+        return m
 
-    def _load_torch(self, tok, device, opts):
-        m, merged = self._full_torch(tok, device, opts) if self.full else self._adapted_torch(tok, device, opts)
+    def _load_torch(self, tok, device, opts, base_path=None):
+        m, merged = self._full_torch(tok, device, opts) if self.full else self._adapted_torch(tok, device, opts, base_path)
         serving = str(device).startswith("cuda") and m.hybrid
         if opts.fused and serving and merged:   # fused projections need plain (merged or full) weights
             from .fused_qwen35 import fuse
@@ -288,12 +357,15 @@ class Checkpoint:
         values computed in fp32). Nothing to merge (`load` refuses lora_scale for full weights on either backend)."""
         meta = self.meta
         return DecisionModel(meta.base, tok, device, head_dim=meta.head_dim, option_isolation=meta.option_isolation,
-                             dtype=opts.dtype or getattr(torch, self.saved_dtype()), attn=opts.attn, weights=self.path), True
+                             dtype=opts.dtype or getattr(torch, self.saved_dtype()), attn=opts.attn, weights=self.path,
+                             local=bool(self.base_path)), True
 
-    def _adapted_torch(self, tok, device, opts):
-        """-> (model, whether the adapter was merged): the base with this checkpoint's LoRA."""
+    def _adapted_torch(self, tok, device, opts, base_path=None):
+        """-> (model, whether the adapter was merged): the base with this checkpoint's LoRA. A local base directory
+        (configured local mode) is passed to the backbone as the model name and never as a Hub revision."""
         from peft import PeftModel
         meta = self.meta
+        local = str(base_path or self.base_path) if (base_path or self.base_path) else None
         dtype, merge = opts.dtype or torch.float32, opts.merge
         if meta.weights_dtype == "bf16":
             # trained with a bf16 backbone (--weights_dtype bf16: Kev-27B, the 35B-A3B MoE whose fused experts need bf16):
@@ -301,8 +373,9 @@ class Checkpoint:
             # (one rounding of W + delta, as for every served Kev; parity in runs/serving-27b-*).
             dtype, merge = torch.bfloat16, merge and bool(opts.fused)
         merge = merge and not self.adapter_config().get("trainable_token_indices")   # token-trained adapters stay unmerged
-        m = DecisionModel(meta.base, tok, device, lora=None, revision=meta.base_revision, head_dim=meta.head_dim,
-                          option_isolation=meta.option_isolation, dtype=dtype, attn=opts.attn)
+        m = DecisionModel(local or meta.base, tok, device, lora=None, revision=None if local else meta.base_revision,
+                          head_dim=meta.head_dim, option_isolation=meta.option_isolation, dtype=dtype, attn=opts.attn,
+                          local=bool(local))
         m.lm = PeftModel.from_pretrained(m.lm, self.path, torch_device=str(device)).to(device)   # trainable token embeddings, if any, live in the adapter
         if opts.lora_scale != 1:
             for module in m.lm.modules():

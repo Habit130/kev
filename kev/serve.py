@@ -2,6 +2,15 @@
 
 Run: uv run --extra serve python -m kev.serve --run runs/kev --port 8008
 
+Configured local mode loads the checkpoint named by a task preset in a machine-local registry, offline:
+
+    python -m kev.serve --config .local/local-inference.json --task support-triage-4b --host 127.0.0.1 --port 8009
+
+The task fixes the model for the whole server: the request's `model` field is an alias the response echoes, never a
+hot-switch, and /v1/models reports the task, the actual checkpoint, the base, their pinned sources and revisions, so a
+client can check what is really loaded instead of trusting the alias. Legacy startup (`--run`, hub id or local
+directory, through the HF cache) is unchanged when `--config`/`--task` are not given.
+
 TypeSafe-compatible: POST /v1/systemone, GET /v1/models, the `x-typesafe-request-id` response header, and bearer auth
 when KEV_API_KEY is set (unset = open server, the local default). Demo extras: POST /v1/systemone/permute (one Choice
 under several option orders) and POST /v1/systemone/separate (each question in its own pass, for the packed-vs-separate
@@ -22,6 +31,7 @@ from pydantic import BaseModel, Field
 from .api import SystemOneRequest, to_record, to_answers, output_tokens, with_date_facts
 from .checkpoint import Checkpoint, LoadOptions, fused_available, is_hub_id
 from .device import default_device, empty_cache, out_of_memory, sync
+from .local import LocalConfigError, load_registry, resolve, verify_artifacts
 from .model import SERVE_MAX_STATE, ContextOverflow, admit
 
 PREFIX_CACHE_SIZE = int(os.environ.get("KEV_PREFIX_CACHE", "4"))          # states kept (KV + DeltaNet states; attention-only backbones also the state's hidden states); 0 disables
@@ -107,6 +117,8 @@ class Server:
     batched_requests: int = 0
     release_date: str = field(default="")   # for the TypeSafe model card; resolved once (may ask the Hub)
     truncate_states: bool = field(default_factory=lambda: TRUNCATE_STATES)   # KEV_TRUNCATE_STATES; off: an over-length state is refused (kev.model.admit)
+    local: object = None   # kev.local.Resolved when the server was started from a task preset; None = legacy --run startup
+    verified: object = None   # payloads re-hashed against an acquisition receipt at startup, when --receipt was given
 
     def __post_init__(self):
         self.release_date = self.release_date or self.checkpoint.release_date()
@@ -298,7 +310,9 @@ def truncation_marks(body, part):
 @app.get("/v1/models")
 def models():
     """One TypeSafe model card (name, description, release_date) per accepted model name, plus the Kev serving details
-    a client may ignore: the run, the base, the device, the backend and precision, the temperature, prefix-cache stats."""
+    a client may ignore: the run, the base, the device, the backend and precision, the temperature, prefix-cache stats.
+    A server started from a task preset also carries `local`: the task, the resolved checkpoint and base paths, and the
+    pinned sources and revisions they were verified against — the actual loaded identity, not the echoed alias."""
     s = server()
     ck, meta = s.checkpoint, s.checkpoint.meta
     card = {"description": f"Kev pointer head on {meta.base}, serving {ck.requested} at temperature {s.model.head.temperature:.2f}",
@@ -309,6 +323,8 @@ def models():
             "prefix_cache": {"size": s.prefix_cache.size, "min_state_tokens": s.prefix_cache.min_tokens, "max_tokens": s.prefix_cache.max_tokens, "hits": s.prefix_cache.hits,
                              "misses": s.prefix_cache.misses, "cached_states": len(s.prefix_cache.entries), "oom_retries": s.prefix_cache.oom_retries},
             "batches": {"count": s.batches, "requests": s.batched_requests, "queued": s.queue.qsize()}}
+    if s.local is not None:
+        card["local"] = s.local.card(backend=s.model.backend, dtype=s.model.dtype, device=s.device, verified=s.verified)
     return {"models": [{"name": name, **card} for name in MODEL_NAMES]}
 
 
@@ -316,11 +332,35 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", default="runs/kev")
     ap.add_argument("--fallback", default="runs/smoke")
+    ap.add_argument("--config", default=None, help="machine-local JSON registry (kev.local); needs --task")
+    ap.add_argument("--task", default=None, help="task id declared in that config; selects the checkpoint for this server")
+    ap.add_argument("--receipt", default=None, help="acquisition receipt JSON: re-hash every payload against it before loading")
     ap.add_argument("--host", default="127.0.0.1", help="interface to bind; 0.0.0.0 to serve beyond this machine (a container, a VM behind a proxy)")
     ap.add_argument("--port", type=int, default=8008)
     a = ap.parse_args()
-    run = a.run if is_hub_id(a.run) or os.path.exists(f"{a.run}/head.pt") else a.fallback
-    if run != a.run: print(f"{a.run} not found, falling back to {run}")
+    if a.config or a.task:
+        if not (a.config and a.task):
+            ap.error("--config and --task are used together; a configured server serves exactly one task's checkpoint")
+        if a.run != ap.get_default("run"):
+            ap.error("--run and --config/--task are mutually exclusive: a configured server takes its checkpoint from the task")
+    elif a.receipt:
+        ap.error("--receipt verifies a configured task's artifacts; it needs --config and --task (a legacy --run has no "
+                 "registry pin to compare it against)")
+    resolved = verified = None
+    if a.task:
+        try:
+            registry = load_registry(a.config)
+            resolved = resolve(registry, a.task)
+            verified = verify_artifacts(registry, a.receipt, task_id=a.task) if a.receipt else None
+        except LocalConfigError as exc:
+            print(f"local inference error: {exc}", file=sys.stderr)
+            return 2
+        ck = resolved.checkpoint
+        run = ck.path
+    else:
+        run = a.run if is_hub_id(a.run) or os.path.exists(f"{a.run}/head.pt") else a.fallback
+        if run != a.run: print(f"{a.run} not found, falling back to {run}")
+        ck = Checkpoint(run)
     dev = default_device()
     opts = LoadOptions.from_env()
     if dev == "mps" and opts.attn is None: opts = replace(opts, attn="sdpa")   # serving default on Apple GPUs (parity measured)
@@ -329,15 +369,23 @@ def main():
     fused_default = dev == "cuda" and opts.fused is None
     if fused_default: opts = replace(opts, fused=fused_available())   # serving default: fused Qwen3.5 kernels, ~1/3 less GPU time per batch (kev.fused_qwen35), when fla is installed; KEV_FUSED=0 to decline, KEV_FUSED=1 to insist
     if opts.backend is None: opts = replace(opts, backend="auto")   # serving default: MLX for the hybrid Qwen3.5 checkpoints on Apple Silicon (LoadOptions.backend); KEV_BACKEND=torch to decline
-    ck = Checkpoint(run)
-    tok, model = ck.load(dev, opts)
+    if resolved is not None: opts = resolved.load_options(opts)
+    try:
+        tok, model = ck.load(dev, opts)
+    except LocalConfigError as exc:   # a local base directory declared but not present, etc.
+        print(f"local inference error: {exc}", file=sys.stderr)
+        return 2
     if fused_default and not opts.fused and model.hybrid: print("fused Qwen3.5 kernels off: install the flash-linear-attention version kev/fused_qwen35.py pins (FLA_VERSION) to turn them on")
-    app.state.server = Server(ck, tok, model, dev)
+    app.state.server = Server(ck, tok, model, dev, local=resolved, verified=verified)
     print(f"serving {ck.requested} ({ck.path}) on {dev} via {model.backend} ({model.dtype}) {a.host}:{a.port}; states over {SERVE_MAX_STATE:,} tokens "
           f"{'truncated (KEV_TRUNCATE_STATES=1)' if app.state.server.truncate_states else 'refused (422)'}")   # /v1/models reports the run as given, not the resolved cache path
+    if resolved is not None:
+        print(f"task {resolved.task.id}: model {resolved.model.id}, base {resolved.base_path} "
+              f"({resolved.base_source}@{resolved.base_revision or 'unpinned'}); the request model field is an alias, not a switch")
     import uvicorn
     uvicorn.run(app, host=a.host, port=a.port)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())   # a configured startup failure returns 2; without SystemExit the exit status would be 0
