@@ -21,17 +21,18 @@ and precision follow LoadOptions (KEV_BACKEND, KEV_DTYPE, ...): on Apple Silicon
 by default, elsewhere on torch in bf16.
 """
 import argparse, asyncio, atexit, hmac, os, queue, random, sys, threading, time, traceback, uuid
+import socket
 from concurrent.futures import Future
 import torch
 from dataclasses import dataclass, field, replace
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from .api import SystemOneRequest, to_record, to_answers, output_tokens, with_date_facts
 from .checkpoint import Checkpoint, LoadOptions, fused_available, is_hub_id
 from .device import default_device, empty_cache, out_of_memory, sync
-from .local import LocalConfigError, load_registry, resolve, verify_artifacts
+from .local import LocalConfigError, load_registry, resolve, resolve_model, verify_artifacts
 from .model import SERVE_MAX_STATE, ContextOverflow, admit
 
 PREFIX_CACHE_SIZE = int(os.environ.get("KEV_PREFIX_CACHE", "4"))          # states kept (KV + DeltaNet states; attention-only backbones also the state's hidden states); 0 disables
@@ -328,26 +329,60 @@ def models():
     return {"models": [{"name": name, **card} for name in MODEL_NAMES]}
 
 
-def main():
+@app.post("/__kev/consumer/shutdown", include_in_schema=False)
+async def consumer_shutdown(request: Request):
+    """Private loopback lifecycle hook, disabled unless this process is session-managed."""
+    token = getattr(app.state, "consumer_owner_token", None)
+    runtime = getattr(app.state, "consumer_uvicorn", None)
+    if not token or runtime is None:
+        raise HTTPException(404, "not found")
+    if not hmac.compare_digest(request.headers.get("x-kev-owner-token", ""), token):
+        raise HTTPException(403, "invalid owner token")
+    runtime.should_exit = True
+    return {"state": "closing"}
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", default="runs/kev")
     ap.add_argument("--fallback", default="runs/smoke")
     ap.add_argument("--config", default=None, help="machine-local JSON registry (kev.local); needs --task")
     ap.add_argument("--task", default=None, help="task id declared in that config; selects the checkpoint for this server")
+    ap.add_argument("--model-id", default=None, help=argparse.SUPPRESS)
     ap.add_argument("--receipt", default=None, help="acquisition receipt JSON: re-hash every payload against it before loading")
     ap.add_argument("--host", default="127.0.0.1", help="interface to bind; 0.0.0.0 to serve beyond this machine (a container, a VM behind a proxy)")
     ap.add_argument("--port", type=int, default=8008)
-    a = ap.parse_args()
-    if a.config or a.task:
+    ap.add_argument("--fd", type=int, default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--owner-token", default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--session-record", default=None, help=argparse.SUPPRESS)
+    a = ap.parse_args(argv)
+    if a.model_id is not None:
+        if not a.config or a.task:
+            ap.error("managed model serving needs --config and --model-id without --task")
+        if a.receipt:
+            ap.error("managed model serving does not accept --receipt")
+        if a.fd is None or not a.owner_token or not a.session_record:
+            ap.error("managed model serving needs its inherited socket and owner token")
+        if a.run != ap.get_default("run"):
+            ap.error("--run and --config/--model-id are mutually exclusive")
+    elif a.config or a.task:
         if not (a.config and a.task):
             ap.error("--config and --task are used together; a configured server serves exactly one task's checkpoint")
         if a.run != ap.get_default("run"):
             ap.error("--run and --config/--task are mutually exclusive: a configured server takes its checkpoint from the task")
-    elif a.receipt:
+    elif a.receipt or a.fd is not None or a.owner_token or a.session_record:
         ap.error("--receipt verifies a configured task's artifacts; it needs --config and --task (a legacy --run has no "
                  "registry pin to compare it against)")
     resolved = verified = None
-    if a.task:
+    if a.model_id is not None:
+        try:
+            resolved = resolve_model(load_registry(a.config), a.model_id)
+        except LocalConfigError as exc:
+            print(f"local inference error: {exc}", file=sys.stderr)
+            return 2
+        ck = resolved.checkpoint
+        run = ck.path
+    elif a.task:
         try:
             registry = load_registry(a.config)
             resolved = resolve(registry, a.task)
@@ -377,13 +412,30 @@ def main():
         return 2
     if fused_default and not opts.fused and model.hybrid: print("fused Qwen3.5 kernels off: install the flash-linear-attention version kev/fused_qwen35.py pins (FLA_VERSION) to turn them on")
     app.state.server = Server(ck, tok, model, dev, local=resolved, verified=verified)
+    if a.owner_token:
+        print(f"consumer session model loaded: {resolved.model.id} via {model.backend} ({model.dtype})", flush=True)
     print(f"serving {ck.requested} ({ck.path}) on {dev} via {model.backend} ({model.dtype}) {a.host}:{a.port}; states over {SERVE_MAX_STATE:,} tokens "
           f"{'truncated (KEV_TRUNCATE_STATES=1)' if app.state.server.truncate_states else 'refused (422)'}")   # /v1/models reports the run as given, not the resolved cache path
-    if resolved is not None:
+    if resolved is not None and resolved.task is not None:
         print(f"task {resolved.task.id}: model {resolved.model.id}, base {resolved.base_path} "
               f"({resolved.base_source}@{resolved.base_revision or 'unpinned'}); the request model field is an alias, not a switch")
+    elif resolved is not None:
+        print(f"model {resolved.model.id}, base {resolved.base_path} "
+              f"({resolved.base_source}@{resolved.base_revision or 'unpinned'}); the request model field is an alias, not a switch")
     import uvicorn
-    uvicorn.run(app, host=a.host, port=a.port)
+    if a.fd is None:
+        uvicorn.run(app, host=a.host, port=a.port)
+    else:
+        inherited = socket.socket(fileno=a.fd)
+        try:
+            config = uvicorn.Config(app, host=a.host, port=a.port)
+            app.state.consumer_owner_token = a.owner_token
+            app.state.consumer_uvicorn = uvicorn.Server(config)
+            app.state.consumer_uvicorn.run(sockets=[inherited])
+        finally:
+            app.state.consumer_owner_token = None
+            app.state.consumer_uvicorn = None
+            inherited.close()
     return 0
 
 

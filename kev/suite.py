@@ -224,7 +224,7 @@ def fetch_partition(directory, filename):
     """Download one partition of a frozen suite from its Hub mirror into place: the manifest's own "mirror" if it names
     one, else SUITES_DATASET@SUITES_REVISION. The caller verifies the sha256."""
     from huggingface_hub import hf_hub_download
-    from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+    from huggingface_hub.errors import GatedRepoError, LocalEntryNotFoundError, RepositoryNotFoundError
     directory = Path(directory).resolve()
     evals_root = next((p for p in directory.parents if p.name == "evals"), None)
     if evals_root is None:
@@ -234,11 +234,23 @@ def fetch_partition(directory, filename):
     repo, revision = (mirror["dataset"], mirror["revision"]) if mirror else (SUITES_DATASET, SUITES_REVISION)   # a named mirror pins its own revision
     try:
         cached = hf_hub_download(repo, str(relative), repo_type="dataset", revision=revision)
+    except LocalEntryNotFoundError as e:
+        if repo == PRIVATE_DATASET and is_offline_cache_miss(e):
+            raise PermissionError(f"{relative} is only in {repo}, which is unavailable to this account while offline; `hf auth login` "
+                                  "(or HF_TOKEN) with access to it, or ask for it") from e
+        raise
     except (RepositoryNotFoundError, GatedRepoError) as e:   # a private mirror answers "not found" to anyone without access
         raise PermissionError(f"{relative} is only in {repo}, which is missing or private to this account; `hf auth login` "
                               "(or HF_TOKEN) with access to it, or ask for it") from e
     shutil.copyfile(cached, directory / filename)
     print(f"fetched {relative} from {repo}@{revision[:10]}", flush=True)
+
+
+def is_offline_cache_miss(error):
+    """Whether Hub reports a cache miss specifically because offline mode blocked its lookup."""
+    from huggingface_hub.errors import OfflineModeIsEnabled
+
+    return isinstance(error.__cause__, OfflineModeIsEnabled)
 
 
 def case_copy(record, variant):

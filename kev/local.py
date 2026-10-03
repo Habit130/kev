@@ -366,6 +366,17 @@ def resolve(registry, task_id):
                     base_source=base_source, base_revision=base_revision, questions=registry.questions(task))
 
 
+def resolve_model(registry, model_id):
+    """Resolve one registered model without requiring a business task in the machine registry."""
+    model = registry.model(model_id)
+    require_artifact("checkpoint", model.checkpoint.path)
+    require_artifact("base", model.base.path)
+    ck = Checkpoint(str(model.checkpoint.path))
+    base_source, base_revision = resolved_meta(ck, model.base)
+    return Resolved(registry=registry, task=None, model=model, checkpoint=ck, base_path=Path(model.base.path),
+                    base_source=base_source, base_revision=base_revision, questions={})
+
+
 def hybrid_check(base_path):
     """Whether the configured base is a hybrid (Qwen3.5 Gated DeltaNet) backbone, read from its config.json."""
     from transformers import AutoConfig
@@ -376,7 +387,7 @@ def hybrid_check(base_path):
 class Resolved:
     """One task's fixed model selection: what the batch runner and the serving startup both use."""
     registry: Registry
-    task: TaskPreset
+    task: TaskPreset | None
     model: ModelEntry
     checkpoint: Checkpoint   # kev.checkpoint.Checkpoint, resolved locally
     base_path: Path
@@ -393,8 +404,7 @@ class Resolved:
         hash of the bytes read now (that is what verify_artifacts does, on request). `verified` records the
         filenames re-hashed in this process, when the caller asked for that."""
         pin = self.model.checkpoint
-        return {
-            "task": self.task.id,
+        card = {
             "model_id": self.model.id,
             "checkpoint": {"path": str(self.checkpoint.path), "requested": self.checkpoint.requested,
                            "pin": {"source": pin.source, "revision": pin.revision}},
@@ -404,3 +414,6 @@ class Resolved:
             "verified_sha256": verified,
             "backend": backend, "dtype": dtype, "device": device,
         }
+        if self.task is not None:
+            card["task"] = self.task.id
+        return card

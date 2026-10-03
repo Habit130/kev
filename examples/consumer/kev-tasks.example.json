@@ -1,0 +1,39 @@
+{
+  "schema": "kev-project-tasks/1",
+  "description": "Synthetic project-owned task examples; replace with reviewed project questions.",
+  "model": "kev-4b",
+  "tasks": {
+    "triage": {
+      "description": "Choose a destination for a support request.",
+      "questions": {
+        "department": {
+          "type": "choice",
+          "instructions": "Which team should handle this request?",
+          "criteria": {
+            "billing": "Charges, invoices, or payment problems",
+            "delivery": "Shipping status, delays, or missing packages",
+            "returns": "Refunds, exchanges, or damaged items"
+          }
+        }
+      }
+    },
+    "review": {
+      "description": "Add a boolean-probability and ordinal assessment.",
+      "questions": {
+        "needs_escalation": {
+          "type": "noul",
+          "instructions": "Does this request need a specialist to review it?",
+          "criteria": {
+            "true": "The request cannot be resolved through the standard process.",
+            "false": "The standard process is sufficient."
+          }
+        },
+        "urgency": {
+          "type": "score",
+          "instructions": "How soon should the request be reviewed?",
+          "criteria": ["when convenient", "within a few days", "today"]
+        }
+      }
+    }
+  }
+}
