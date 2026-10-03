@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from kev.suite import digest, read_json, write_json  # noqa: E402
+from kev.suite import digest, is_offline_cache_miss, read_json, write_json  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DATASET = "jaredpalmer/kev-private-train"   # the SFT corpus's private dataset (PLAN.md, "Data policy for the SFT work")
@@ -41,13 +41,19 @@ def upload(files, manifest, round_number, dataset=DATASET, root=ROOT):
 def restore(manifest, root=ROOT):
     """Put every file of the manifest in place under root (sha256-checked); -> the paths fetched."""
     from huggingface_hub import hf_hub_download
-    from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+    from huggingface_hub.errors import GatedRepoError, LocalEntryNotFoundError, RepositoryNotFoundError
     m, fetched = read_json(Path(root) / manifest), []
     for f in m["files"]:
         target = Path(root) / f["path"]
-        if target.exists() and digest(target) == f["sha256"]: continue
+        target_exists = target.exists()
+        if target_exists and digest(target) == f["sha256"]: continue
         try:
             cached = hf_hub_download(m["dataset"], f["private_path"], repo_type="dataset", revision=m["revision"])
+        except LocalEntryNotFoundError as e:
+            if not target_exists and m["dataset"] == DATASET and is_offline_cache_miss(e):
+                raise PermissionError(f"{f['path']} is only in {m['dataset']}, which is unavailable to this account while offline; "
+                                      "`hf auth login` with access, or ask for it") from e
+            raise
         except (RepositoryNotFoundError, GatedRepoError) as e:   # a private dataset answers "not found" to anyone without access
             raise PermissionError(f"{f['path']} is only in {m['dataset']}, which is private to its owner; `hf auth login` with access") from e
         if digest(cached) != f["sha256"]: raise ValueError(f"{f['private_path']}@{m['revision'][:10]} does not match the manifest's sha256")

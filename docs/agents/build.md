@@ -59,6 +59,17 @@ Fast suites, matching CI's test selection:
 uv run --extra serve python -m pytest tests/test_unit.py tests/test_research.py tests/test_generators.py tests/test_conventions.py tests/test_documents_tools.py tests/test_hard_v1.py tests/test_devtools_v1.py tests/test_breadth_v1.py tests/test_rounds.py tests/test_skill_scripts.py -q
 ```
 
+Offline optional private inputs: `kev.suite.load_split` and
+`scripts.private_rows.restore` translate a Hub `LocalEntryNotFoundError` whose
+direct cause is `OfflineModeIsEnabled` into the existing `PermissionError` signal
+only for the canonical private mirrors (`PRIVATE_DATASET` and `DATASET`). This lets
+existing optional-input branches handle an uncached private file without weakening
+test selection. Public or unknown mirrors, ordinary local misses, corrupt local/cache
+bytes, integrity mismatches, and unrelated errors retain their failures; available
+files still pass through the normal hash checks. Synthetic regressions block socket
+connections and use controlled Hub/cache doubles, so they require no private input
+or network access.
+
 There is no configured Python lint/typecheck command, no task runner, and no installed
 repository hook. Python packaging uses setuptools; initialization adds no release command.
 Train/benchmark/study/release details remain in `docs/agents/kev-reference.md` and the

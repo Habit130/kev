@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PYTHON="$ROOT/.venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+    printf '%s\n' '{"error":{"category":"unavailable_environment","message":"Kev project Python environment is unavailable"}}'
+    printf '%s\n' "kev: unavailable_environment: expected executable $PYTHON" >&2
+    exit 2
+fi
+
+PYTHONPATH="$ROOT" exec "$PYTHON" -m kev.consumer "$@"
