@@ -1,12 +1,13 @@
-# Local inference with a fixed task preset
+# Local inference: batch presets and project sessions
 
 This fork's first goal is running Kev locally on Apple Silicon through the System One API from
 **pinned, verified local artifacts**, without a Hub lookup at inference time. This document is the
-authoritative guide to that mode: the environment, the model-storage split, the task registry, both
-entry points, and the failure behavior.
+authoritative guide to the environment, model-storage split, machine task registry, legacy batch and
+server entry points, and the additive project-owned session interface.
 
 Upstream `README.md` documents the general (Hub-resolving) path and stays upstream-attributed.
-This page documents the fork's configured local mode, which is additive: `--run` is unchanged.
+This page documents the fork's configured local mode, which is additive: `--run` and the existing
+machine-registry batch/server workflows are unchanged.
 
 ## What "local mode" means
 
@@ -175,6 +176,36 @@ Legacy startup is unchanged when `--config`/`--task` are absent:
 
 `--run` and `--config`/`--task` are mutually exclusive: a configured server takes its checkpoint from
 the task.
+
+## Project-owned task sessions
+
+For another project, use the separate `kev-project-tasks/1` configuration and the repository-local
+[`bin/kev`](../bin/kev) launcher. The project config selects a registered logical model and declares
+multiple named tasks; it contains no checkpoint/base paths or pins and does not add business tasks to
+the machine registry. This interface is additive and does not change the batch CLI or legacy HTTP
+request types.
+
+```sh
+KEV=/absolute/path/to/kev/bin/kev
+"$KEV" validate --config "$PWD/kev-tasks.json"
+"$KEV" open --config "$PWD/kev-tasks.json"
+```
+
+Open once, call any declared task as states arrive, then explicitly close. The session fixes one
+model, snapshots the questions, reports its actual local identity only after readiness, and writes
+its record/log under the consumer project's `.local/kev/` directory. Status and close use that record
+even after the source config changes or disappears. The managed launcher owns its loopback endpoint,
+process identity, exclusive startup slot, offline cache, and bounded close behavior; consumers do not
+choose ports or signal PIDs. It never downloads, falls back, or silently truncates. For task examples,
+safe cleanup, structured errors, recovery, and model limitations, see the
+[`consumer-agent guide`](consumer-agent-guide.md) and
+[`consumer task template`](../examples/consumer/kev-tasks.example.json).
+
+If the caller is interrupted before `open` can return a session path, discover records only within
+that consuming project's `.local/kev/sessions/` directory, then use the public `status` and `close`
+commands on the record from that interrupted attempt. A partial record with no saved identity is not
+evidence that the runtime is ready or that its exclusive slot is free; `close` must confirm recovery.
+Do not inspect raw ownership records, signal a PID, or search another project.
 
 ## Failure behavior
 
