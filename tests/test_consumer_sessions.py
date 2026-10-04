@@ -524,6 +524,97 @@ def test_dead_owned_process_can_be_recovered_without_leaving_the_slot_owned(tmp_
     os.close(slot_fd)
 
 
+def test_interrupted_startup_status_and_close_recover_owned_runtime(tmp_path, monkeypatch, capsys):
+    from kev import consumer
+
+    registry = _machine_registry(tmp_path / "machine")
+    project = tmp_path / "consumer-a"
+    config = _project_config(project)
+    _install_runtime_stub(monkeypatch)
+    interrupted = {}
+    write_json = consumer._write_json_atomic
+
+    def interrupt_after_owner_record(path, value):
+        write_json(path, value)
+        if (
+            Path(path) == consumer.OWNER_FILE
+            and value.get("state") == "starting"
+            and value.get("pid") is not None
+            and value.get("process_started_at") is None
+        ):
+            interrupted["session"] = project / ".local" / "kev" / "sessions" / value["session_id"] / "session.json"
+            raise SystemExit("simulated interruption after owned process metadata was saved")
+
+    monkeypatch.setattr(consumer, "_write_json_atomic", interrupt_after_owner_record)
+    try:
+        with pytest.raises(SystemExit, match="simulated interruption"):
+            consumer.open_session(config, registry)
+        session_path = interrupted["session"]
+        record = json.loads(session_path.read_text(encoding="utf-8"))
+        assert record["state"] == "starting"
+        assert record["identity"] is None
+        assert record["process"]["started_at"] is None
+
+        discovered = subprocess.run(
+            [
+                "find",
+                str(project / ".local" / "kev" / "sessions"),
+                "-type",
+                "f",
+                "-name",
+                "session.json",
+                "-print",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        session_paths = [Path(line) for line in discovered.stdout.splitlines()]
+        assert session_paths == [session_path]
+        session_path = session_paths[0]
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            record = json.loads(session_path.read_text(encoding="utf-8"))
+            if (
+                consumer._process_info(record["process"], session_path)[0] == "owned"
+                and consumer._runtime_identity(record["endpoint"]) is not None
+            ):
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("interrupted consumer runtime did not become ready and remain owned")
+
+        assert consumer.main(["status", "--session", str(session_path)]) == 0
+        status = capsys.readouterr()
+        status_json = json.loads(status.out)
+        assert status_json["state"] == "stale"
+        assert "Traceback" not in status.err
+
+        assert consumer.main(["open", "--config", str(config), "--registry", str(registry)]) == 2
+        busy = capsys.readouterr()
+        assert json.loads(busy.out)["error"]["category"] == "busy"
+        assert "Traceback" not in busy.err
+
+        assert consumer.main(["close", "--session", str(session_path)]) == 0
+        closed = capsys.readouterr()
+        assert json.loads(closed.out)["state"] == "closed"
+        assert "Traceback" not in closed.err
+        assert consumer._process_info(record["process"], session_path)[0] == "missing"
+        with pytest.raises(OSError):
+            consumer._http_json(record["endpoint"], "GET", "/v1/models", timeout=0.2)
+        assert consumer._read_json(consumer.OWNER_FILE) is None
+        slot_fd = consumer._acquire_slot(required=False)
+        assert slot_fd is not None
+        os.close(slot_fd)
+    finally:
+        session_path = interrupted.get("session")
+        if session_path is not None and session_path.exists():
+            latest = json.loads(session_path.read_text(encoding="utf-8"))
+            if latest.get("state") != "closed":
+                consumer.close_session(session_path)
+
+
 def test_session_record_cannot_expand_project_ownership_by_changing_its_root(tmp_path, monkeypatch):
     from kev import consumer
     from kev.consumer import ConsumerError

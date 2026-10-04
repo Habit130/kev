@@ -201,6 +201,12 @@ safe cleanup, structured errors, recovery, and model limitations, see the
 [`consumer-agent guide`](consumer-agent-guide.md) and
 [`consumer task template`](../examples/consumer/kev-tasks.example.json).
 
+If the caller is interrupted before `open` can return a session path, discover records only within
+that consuming project's `.local/kev/sessions/` directory, then use the public `status` and `close`
+commands on the record from that interrupted attempt. A partial record with no saved identity is not
+evidence that the runtime is ready or that its exclusive slot is free; `close` must confirm recovery.
+Do not inspect raw ownership records, signal a PID, or search another project.
+
 ## Failure behavior
 
 Every one of these fails with a clear message and **no** network call, no substitute model, and no

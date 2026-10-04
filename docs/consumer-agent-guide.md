@@ -89,6 +89,17 @@ categories are `invalid_config`, `invalid_input`, `unknown_model`,
   exclusive slot. Do not retry in a loop, adopt its endpoint, or interrupt it.
 - If a workflow is interrupted, use the session path saved from `open`: run
   `status`, then `close`. Never signal a saved PID or delete ownership metadata.
+- If the `open` caller is interrupted before it can return or save that path,
+  discover session paths only inside this consuming project's
+  `.local/kev/sessions/` directory, for example with
+  `find "$PWD/.local/kev/sessions" -type f -name session.json -print`. Use the
+  path for the interrupted open with the public `status` command, then `close`
+  and verify it reports `closed`. A partial record without a saved runtime
+  identity may report `stale`; that does not confirm the slot is free. `close`
+  verifies ownership and termination before releasing it. If ownership cannot
+  be verified, stop and ask the project maintainer rather than signaling a PID
+  or editing a record. Do not inspect or print raw session/owner records or
+  search other projects.
 - A `failed_close` means termination was not confirmed. The slot remains owned;
   inspect status and retry close when possible. Do not start another model or
   claim the slot is free until close confirms it.

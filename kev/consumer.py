@@ -412,7 +412,7 @@ def _local_identity(payload):
 
 
 def _identity_matches(expected, actual):
-    if not isinstance(actual, dict):
+    if not isinstance(expected, dict) or not isinstance(actual, dict):
         return False
     for field in ("model_id", "checkpoint", "base"):
         if actual.get(field) != expected.get(field):
