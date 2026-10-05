@@ -52,6 +52,12 @@ live in `examples/local-inference/`; machine paths and receipts stay in ignored 
 | option | A candidate answer within a question; options in one question can interact |
 | checkpoint | A loadable Kev model artifact with pointer head and either adapter or full weights |
 | temperature | The scalar applied to logits for probability calibration; not an accuracy guarantee |
+| workbench | The human-operated local interface in this repository; not a separate model or chat API |
+| task template | Reusable named question definitions; portable task configs contain tasks and a logical model, not state inputs or answers |
+| run | One submitted state and frozen question snapshot, associated with its actual model identity and outcome |
+| model session | The existing owned fixed-model runtime; its residency does not depend on whether a browser tab is open |
+| run history | Workbench-owned persisted run records in this checkout; not browser storage or a claim about business correctness |
+| selected model | The logical model chosen for a future run, distinct from the checkpoint identity actually resident in a model session |
 | Acceptance | A fresh, independent verification of the frozen delivery contract; avoid calling research confirmation Acceptance |
 | confirmation | A registered research candidate's test/locked-read stage; it does not approve a PR or authorize publication |
 

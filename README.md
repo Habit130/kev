@@ -221,21 +221,15 @@ A model you fine-tuned with the `kev-finetune` skill deploys the same way from i
 
 **Length.** Kev-0.8B, 4B and 9B trained mostly on states of up to 384 tokens, with longer ones in their document and skill fine-tunes (up to 7,552 tokens), Kev-27B on states of up to 32,768. The server accepts states of up to 65,536 tokens, and 8,192 more for each question, and refuses a longer one with a 422 instead of cutting it. How far past its training length each model stays accurate is the "Validated context" column in [Models](#models). For Kev-0.8B, 4B and 9B that is 8,192 tokens: at 16k the measurement on real contracts can no longer rule out a drop of more than 3 points, and at 32k all three are measurably less accurate than at 8k. Kev-27B holds to the 65,536-token limit. On real contracts of up to 64k tokens (CUAD) Kev-27B scores 0.874, and its confidence there is less reliable than on short text; its [model card](docs/model-cards/kev-27b.md) has the numbers by length.
 
-## Playground
+## Local workbench
 
-With the server running, open another terminal. You'll need Node 20.9+:
+On macOS, complete the [project-local setup](playground/README.md#one-time-setup), then double-click [`bin/kev-playground.command`](bin/kev-playground.command). It starts the workbench on loopback, waits for readiness, and opens the browser. From a terminal, run `./bin/kev-playground.command`. The launcher uses the checkout's Node 22 and frontend dependencies; it does not install software globally or download models. A listener already using port 3001 is left untouched.
 
-```bash
-cd playground
-npm install
-npm run dev -- -p 3001
-```
+The workbench starts with Kev-4B selected. Load a registered local model explicitly, edit a saved task or create one with Choice, Noul, and Score questions, then submit literal text or JSON. Results and run history remain tied to the submitted snapshot, including the actual loaded checkpoint identity. Templates, history, runtime files, and exports stay under the ignored `.local/playground/` directory. See the [workbench guide](playground/README.md) for setup, recovery, storage, and model limitations.
 
-Open [localhost:3001](http://localhost:3001), load a preset, and edit the text and questions. Press `⌘↵` to run it. "Packed vs separate" compares asking all questions at once with asking them one at a time. "Permute" runs a Choice question with six option orders. There are also presets for testing question isolation and fake delimiter tokens.
+The earlier Playground remains at [localhost:3001/classic](http://localhost:3001/classic); its chess demo remains at [localhost:3001/chess](http://localhost:3001/chess). The workbench does not use browser storage for templates or history.
 
-![Kev playground](docs/playground.png)
-
-There's a [chess demo](http://localhost:3001/chess), too. The board is the input, legal moves are Choice options, and a Score question rates the position. You can play against Kev or let it play itself. Games are saved in `localStorage`.
+![Classic Kev playground](docs/playground.png)
 
 ## API
 
