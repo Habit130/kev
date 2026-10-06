@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:workbench": "KEV_WORKBENCH_TEST_MODE=deterministic sh scripts/run-workbench-tests.sh",
+    "test:workbench:native": "KEV_WORKBENCH_TEST_MODE=native sh scripts/run-workbench-tests.sh --workers=1"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -21,6 +23,7 @@
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

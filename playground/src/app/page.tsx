@@ -1,5 +1,5 @@
-import { Playground } from "@/components/playground";
+import { Workbench } from "@/components/workbench";
 
 export default function Home() {
-  return <Playground />;
+  return <Workbench />;
 }

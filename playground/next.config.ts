@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
   // opening the app via 127.0.0.1 renders the SSR HTML but never hydrates (no errors, buttons dead).
   allowedDevOrigins: ["127.0.0.1"],
   async rewrites() {
+    if (process.env.KEV_WORKBENCH_TEST_MODE) return [];
     return [{ source: "/kev/:path*", destination: `${KEV_API}/:path*` }];
   },
 };

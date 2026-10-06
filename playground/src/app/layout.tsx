@@ -1,28 +1,14 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "kev playground",
-  description: "Jev-style decision model: shared state, isolated questions, direct probability readout",
+  title: "Kev · Local Model Workbench",
+  description: "A project-local workbench for typed Kev inference, task templates, and run history.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="zh-CN" className="h-full antialiased light">
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
