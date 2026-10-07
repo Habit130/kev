@@ -15,7 +15,7 @@ function ProbabilityBar({ label, probability, selected }: { label: string; proba
   const safe = Math.max(0, Math.min(probability, 1));
   return (
     <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)_3.5rem] items-center gap-2.5 text-xs" title={label}>
-      <span className={`truncate ${selected ? "font-medium text-foreground" : "text-muted-foreground"}`}>{label}</span>
+      <span className={`break-words ${selected ? "font-medium text-foreground" : "text-muted-foreground"}`}>{label}</span>
       <span className="relative h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
         <span className={`absolute inset-y-0 left-0 rounded-full ${selected ? "bg-blue-600 dark:bg-blue-400" : "bg-blue-300 dark:bg-blue-900"}`} style={{ width: `${safe * 100}%` }} />
       </span>
@@ -104,6 +104,13 @@ export function WorkbenchResults({ record, busy, error }: { record: HistoryRecor
         )}
       </div>
 
+      {record && <div className="mt-4 rounded-lg bg-muted/50 p-3 text-xs leading-5" aria-label="Result provenance">
+        <p className="break-words font-semibold">Submitted task · {record.taskName} ({record.taskId})</p>
+        <p className="break-all">Run · {record.id} · {new Date(record.submittedAt).toLocaleString()}</p>
+        <p>Actual model · {identity?.modelId ?? "unknown"} · {identity?.backend ?? "unknown"}</p>
+        <p className="text-muted-foreground">Saved snapshot — independent of the current task selection and input.</p>
+      </div>}
+
       {busy && (
         <div role="status" className="mt-5 flex min-h-36 flex-col items-center justify-center rounded-xl border border-dashed border-blue-300 bg-blue-50/70 p-6 text-center dark:border-blue-950 dark:bg-blue-950/30">
           <span className="size-6 animate-spin rounded-full border-2 border-blue-300 border-t-blue-700 dark:border-blue-800 dark:border-t-blue-300" aria-hidden="true" />
@@ -141,11 +148,12 @@ export function WorkbenchResults({ record, busy, error }: { record: HistoryRecor
             {usage && typeof usage.input_tokens === "number" && <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1"><Database className="size-3" /> {usage.input_tokens} input tokens</span>}
             {usage && typeof usage.output_tokens === "number" && <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1"><Gauge className="size-3" /> {usage.output_tokens} output tokens</span>}
           </div>
-          <div className="mt-3 rounded-lg border border-border/80 bg-background px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+          <details className="mt-3 rounded-lg border border-border/80 bg-background px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+            <summary className="cursor-pointer focus-visible:ring-2 focus-visible:ring-ring">Actual model details</summary>
             <p className="break-all"><span className="font-medium text-foreground">Checkpoint</span> · {identity?.checkpoint.source ?? "Unknown"} · {identity?.checkpoint.revision ?? "pin unavailable"}</p>
             <p className="break-all"><span className="font-medium text-foreground">Base</span> · {identity?.base.source ?? "Unknown"} · {identity?.base.revision ?? "pin unavailable"}</p>
             <p className="break-words">Actual runtime · {identity?.backend ?? "unknown"} · {identity?.dtype ?? "unknown"} · {identity?.device ?? "unknown"}</p>
-          </div>
+          </details>
           <div className="mt-3 flex flex-col gap-2.5">
             {orderedEntries(answers).map(([id, answer]) => <Answer key={id} id={id} answer={answer} />)}
           </div>

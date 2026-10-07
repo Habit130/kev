@@ -6,11 +6,9 @@ import {
   Activity,
   ArrowDownToLine,
   ArrowRightLeft,
-  Check,
   ChevronRight,
   CircleHelp,
   Clock3,
-  FileInput,
   FileOutput,
   FolderOpen,
   Moon,
@@ -107,6 +105,9 @@ export function Workbench() {
   const [operationError, setOperationError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
+  const [view, setView] = useState<"run" | "library" | "history">("run");
+  const [runTemplateId, setRunTemplateId] = useState("");
+  const [restoredDraft, setRestoredDraft] = useState<HistoryRecord | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -116,6 +117,7 @@ export function Workbench() {
       setProjectDescription(next.settings.projectDescription ?? "");
       const first = next.templates[0];
       if (first) {
+        setRunTemplateId(first.id);
         const draft = templateDraft(first);
         setTemplateId(draft.id);
         setTaskId(draft.taskId);
@@ -136,6 +138,8 @@ export function Workbench() {
   }, [snapshot?.settings.theme]);
 
   const selectedTemplate = snapshot?.templates.find((template) => template.id === templateId) ?? null;
+  const runTemplate = snapshot?.templates.find((template) => template.id === runTemplateId) ?? null;
+  const runTask = restoredDraft ?? runTemplate;
   const displayedRecord = snapshot?.history.find((record) => record.id === selectedHistoryId) ?? null;
   const activeModel = snapshot?.runtime.identity?.modelId;
   const modelReadyForSelection = snapshot?.runtime.state === "ready" && activeModel === snapshot.settings.selectedModel;
@@ -159,7 +163,7 @@ export function Workbench() {
     }
   }, [stateMode, stateText]);
 
-  const isRunDisabled = !snapshot || !modelReadyForSelection || pendingAction !== null || stateText.length === 0 || !!questionValidationError || !!stateValidationError || !!editorError;
+  const isRunDisabled = !snapshot || !modelReadyForSelection || pendingAction !== null || stateText.length === 0 || !runTask || !!stateValidationError;
 
   async function refreshSnapshot(): Promise<WorkbenchSnapshot | null> {
     try {
@@ -221,7 +225,6 @@ export function Workbench() {
     setTemplateDescription("");
     setQuestions(initialQuestions());
     setEditorError(null);
-    setSelectedHistoryId(null);
     setNotice("New editable task draft. Save it to keep the template.");
   }
 
@@ -237,7 +240,10 @@ export function Workbench() {
     if (data && isJsonObject(data) && isJsonObject(data.settings) && Array.isArray(data.templates)) {
       const next = data as unknown as WorkbenchSnapshot;
       const saved = next.templates.find((item) => item.taskId === taskId);
-      if (saved) setTemplateId(saved.id);
+      if (saved) {
+        setTemplateId(saved.id);
+        if (!runTemplate) setRunTemplateId(saved.id);
+      }
       setNotice("Template saved in project-local workbench storage.");
     }
   }
@@ -300,7 +306,8 @@ export function Workbench() {
   }) {
     const payload = overrides
       ? submittedPayload(overrides.stateMode, overrides.stateText, overrides.questions, overrides.taskId, overrides.taskName)
-      : submittedPayload(stateMode, stateText, questions, taskId, taskName);
+      : runTask ? submittedPayload(stateMode, stateText, runTask.questions, runTask.taskId, "taskName" in runTask ? runTask.taskName : runTask.name) : null;
+    if (!payload) return;
     setPendingAction("run");
     setRunError(null);
     setOperationError(null);
@@ -325,12 +332,8 @@ export function Workbench() {
   function restoreRun(record: HistoryRecord) {
     setStateMode(record.stateMode);
     setStateText(formatState(record));
-    setQuestions(cloneJson(record.questions));
-    setTaskId(record.taskId);
-    setTaskName(record.taskName);
-    setTemplateDescription("");
-    setTemplateId("");
-    setEditorError(null);
+    setRestoredDraft(record);
+    setView("run");
     setNotice("Saved request snapshot restored as a draft. It has not been submitted.");
   }
 
@@ -354,7 +357,10 @@ export function Workbench() {
       const next = acceptSnapshot(data);
       if (next) {
         const first = next.templates[0];
-        if (first) chooseTemplate(first);
+        if (first) {
+          chooseTemplate(first);
+          setRunTemplateId(first.id);
+        }
         setNotice(`Imported ${next.templates.length} task template${next.templates.length === 1 ? "" : "s"}. No model was loaded or switched.`);
       }
     } catch (error) {
@@ -395,7 +401,7 @@ export function Workbench() {
   return (
     <main className="min-h-svh bg-background text-foreground">
       {/* Shell structure adapts shadcn/ui's dashboard-01 Sidebar/Inset pattern; the workbench controls and data views are Kev-specific. */}
-      <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+      <header className="border-b border-border bg-background">
         <div className="mx-auto flex max-w-[1720px] flex-wrap items-center justify-between gap-x-5 gap-y-3 px-4 py-3 sm:px-6 xl:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-950/15"><WandSparkles className="size-4" /></div>
@@ -403,11 +409,15 @@ export function Workbench() {
               <h1 className="truncate text-base font-semibold tracking-tight">本地模型工作台</h1>
               <p className="truncate text-[11px] text-muted-foreground">Kev · local inference, typed answers</p>
             </div>
-            <Link href="/chess" className="ml-2 hidden rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex">Chess</Link>
-            <Link href="/classic" className="hidden rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:inline-flex">旧版 Playground</Link>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <details className="relative" aria-label="Model controls">
+              <summary className="cursor-pointer rounded-lg border border-border px-3 py-2 text-xs focus-visible:ring-2 focus-visible:ring-ring">
+                Model · {snapshot.runtime.state} · {activeModel ?? "none resident"}
+                {activeModel && activeModel !== snapshot.settings.selectedModel && <span> · selected {snapshot.settings.selectedModel}</span>}
+              </summary>
+              <div className="mt-2 flex w-80 max-w-[90vw] flex-wrap gap-2 rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-2.5 py-1.5">
               <span className={`size-2 rounded-full ${snapshot.runtime.state === "ready" ? "bg-emerald-500" : snapshot.runtime.state === "recovery" ? "bg-amber-500" : "bg-muted-foreground/40"}`} aria-hidden="true" />
               <label className="sr-only" htmlFor="selected-model">Selected model</label>
@@ -430,6 +440,9 @@ export function Workbench() {
             <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null || (snapshot.runtime.state === "unloaded")} onClick={() => void stopModel()}>
               <span className="sr-only">Stop or recover the resident model</span><ArrowDownToLine className="size-3.5" /> Stop
             </Button>
+              <p className="text-xs text-muted-foreground">{snapshot.runtime.message}. Selection is for the next run; load, switch and stop are explicit.</p>
+              </div>
+            </details>
             <Button type="button" variant="ghost" size="icon" aria-label={snapshot.settings.theme === "dark" ? "Use light theme" : "Use dark theme"} disabled={pendingAction !== null} onClick={() => void updatePreference("theme", snapshot.settings.theme === "dark" ? "light" : "dark")}>
               {snapshot.settings.theme === "dark" ? <Sun /> : <Moon />}
             </Button>
@@ -437,8 +450,29 @@ export function Workbench() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1720px] gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[214px_minmax(0,1fr)] xl:grid-cols-[226px_minmax(0,1.08fr)_minmax(330px,0.92fr)] xl:gap-5 xl:px-8">
-        <aside className="min-w-0 rounded-2xl border border-border bg-card p-3 shadow-sm shadow-black/[0.025] lg:row-span-2 xl:row-span-1" aria-label="Tasks and run history">
+      <div className="mx-auto grid max-w-[1720px] gap-6 px-4 py-7 sm:px-6 lg:grid-cols-[160px_minmax(0,1fr)] xl:px-8">
+        <aside className="min-w-0" aria-label="Workspace navigation">
+          <nav aria-label="Primary" className="flex gap-2 lg:flex-col">
+            {([['run', 'Run'], ['library', 'Task library'], ['history', 'History']] as const).map(([destination, label]) => (
+              <Button key={destination} variant={view === destination ? "secondary" : "ghost"} className="justify-start" aria-current={view === destination ? "page" : undefined} onClick={() => setView(destination)}>{label}</Button>
+            ))}
+          </nav>
+          <details className="mt-6 text-xs">
+            <summary className="cursor-pointer rounded-lg p-2 focus-visible:ring-2 focus-visible:ring-ring">More tools</summary>
+            <div className="space-y-3 p-2 text-muted-foreground">
+              <p>Independent tools. A loaded workbench model does not make these ready. Configure their separate Kev API backend (KEV_API).</p>
+              <Link href="/classic" className="block underline">Classic Playground</Link>
+              <Link href="/chess" className="block underline">Chess</Link>
+            </div>
+          </details>
+          <p className="mt-6 text-[11px] leading-5 text-muted-foreground">Probabilities and scores are model outputs, not guarantees of business accuracy.</p>
+        </aside>
+
+        <div className="min-w-0 space-y-5">
+          {operationError && <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/5 p-3 text-xs text-destructive">{operationError}</div>}
+          {notice && <div role="status" className="rounded-xl bg-muted p-3 text-xs">{notice}</div>}
+          <div className={view === "library" ? "grid gap-5 xl:grid-cols-[200px_minmax(0,1fr)_300px]" : "hidden"}>
+        <aside className="min-w-0 rounded-2xl border border-border bg-card p-3" aria-label="Saved templates">
           <div className="flex items-center justify-between px-2 py-1">
             <div><p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">Workspace</p><p className="mt-1 truncate text-sm font-semibold">Local tasks</p></div>
             <Button type="button" variant="ghost" size="icon-sm" aria-label="Create new task template" onClick={newTemplate}><Plus /></Button>
@@ -454,7 +488,37 @@ export function Workbench() {
             {snapshot.templates.length === 0 && <p className="px-2.5 py-3 text-xs leading-5 text-muted-foreground">No saved templates. Add a draft with the plus button.</p>}
           </div>
 
-          <div className="mt-5 border-t border-border pt-4">
+          </aside>
+          <section className="min-w-0 rounded-2xl border border-border bg-card p-5" aria-label="Task editor">
+            <h2 className="mb-4 text-lg font-semibold">Task library</h2>
+            <p className="mb-4 text-xs text-muted-foreground">Unfinished edits stay in this tab. Run uses the saved version, not these edits.</p>
+            <WorkbenchQuestionEditor questions={questions} onChange={setQuestions} taskName={taskName} setTaskName={setTaskName} taskId={taskId} setTaskId={setTaskId} description={templateDescription} setDescription={setTemplateDescription} onValidationError={setEditorError} />
+            {questionValidationError && !editorError && <p role="alert" className="mt-2 text-xs text-destructive">{questionValidationError}</p>}
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button size="sm" disabled={pendingAction !== null || !taskName.trim() || !taskId.trim() || !!questionValidationError || !!editorError} onClick={() => void saveCurrentTemplate()}><Save />{templateId ? "Update template" : "Save template"}</Button>
+              {selectedTemplate && <><Button variant="outline" size="sm" onClick={() => chooseTemplate(selectedTemplate)}>Reset to saved</Button><Button variant="ghost" size="sm" disabled={pendingAction !== null} onClick={() => void deleteCurrentTemplate()}><Trash2 />Delete template</Button></>}
+            </div>
+          </section>
+          <section className="min-w-0 rounded-2xl border border-border bg-card p-5" aria-label="Task configuration">
+            <h2 className="text-base font-semibold">Task configuration</h2>
+            <label className="mt-3 block text-xs">Project description (optional export metadata)
+              <Input aria-label="Project description" value={projectDescription} maxLength={1000} onChange={(event) => setProjectDescription(event.target.value)} onBlur={(event) => { if (event.target.value !== (snapshot.settings.projectDescription ?? "")) void updatePreference("projectDescription", event.target.value); }} />
+            </label>
+            <label className="mt-3 block text-xs">Export model
+              <select aria-label="Export model" value={snapshot.settings.exportModel} disabled={pendingAction !== null} onChange={(event) => { if (isModelId(event.target.value)) void updatePreference("exportModel", event.target.value); }} className="mt-2 h-9 w-full rounded border border-input bg-background px-2 focus-visible:ring-2 focus-visible:ring-ring">
+                {(["kev-4b", "kev-0.8b"] as ModelId[]).map((model) => <option key={model} value={model}>{modelChoice(model).label}</option>)}
+              </select>
+            </label>
+            <Button variant="outline" size="sm" className="mt-3" disabled={pendingAction !== null || snapshot.templates.length === 0} onClick={() => void exportConfiguration()}><FileOutput />Export</Button>
+            <p className="mt-5 text-xs leading-5 text-muted-foreground">Import replaces the entire saved template library after full validation; it does not merge. Existing run history is kept. Exports exclude input, history and machine paths.</p>
+            <label className="mt-3 block text-xs">Import kev-project-tasks/1
+              <input aria-label="Import task configuration" type="file" accept="application/json,.json" className="mt-2 w-full min-w-0 rounded border border-input p-2 focus-visible:ring-2 focus-visible:ring-ring" disabled={pendingAction !== null} onChange={(event) => { void importFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+            </label>
+          </section>
+          </div>
+
+          {view === "history" && <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+          <section className="min-w-0 rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center justify-between px-2">
               <div><p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">History</p><p className="mt-1 text-xs text-muted-foreground">{snapshot.history.length} saved runs</p></div>
               <Clock3 className="size-4 text-muted-foreground" />
@@ -469,21 +533,41 @@ export function Workbench() {
               ))}
               {snapshot.history.length === 0 && <p className="px-2.5 py-3 text-xs leading-5 text-muted-foreground">Submitted runs and failures appear here automatically. Nothing is stored in browser history.</p>}
             </div>
-          </div>
 
-          <div className="mt-4 border-t border-border pt-3 text-[10px] leading-4 text-muted-foreground">
-            <p className="flex items-start gap-1.5"><TriangleAlert className="mt-0.5 size-3 shrink-0" /> Probabilities and scores are model outputs, not guarantees of business accuracy.</p>
+          </section>
+          <div className="min-w-0 space-y-4">
+            <WorkbenchResults key={displayedRecord?.id ?? "history"} record={displayedRecord} busy={pendingAction === "run"} error={runError} />
+            {displayedRecord && <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => restoreRun(displayedRecord)}>Restore to draft</Button>
+              <Button variant="outline" size="sm" disabled={!modelReadyForSelection || pendingAction !== null} onClick={() => void runDraft({ stateMode: displayedRecord.stateMode, stateText: formatState(displayedRecord), questions: cloneJson(displayedRecord.questions), taskId: displayedRecord.taskId, taskName: displayedRecord.taskName })}>Rerun snapshot</Button>
+              <Button variant="ghost" size="sm" disabled={pendingAction !== null} onClick={() => void deleteRun(displayedRecord)}>Delete run</Button>
+              <p className="w-full text-xs text-muted-foreground">Rerun uses the currently selected ready model: {snapshot.settings.selectedModel}. Restore does not submit or overwrite a template.</p>
+            </div>}
           </div>
-        </aside>
+          </div>}
+
+          {view === "run" && <div className="grid gap-6 xl:grid-cols-2">
 
         <section className="min-w-0 rounded-2xl border border-border bg-card p-4 shadow-sm shadow-black/[0.025] sm:p-5" aria-labelledby="input-heading">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700 dark:text-blue-300">Workbench</p>
-              <h2 id="input-heading" className="mt-1 text-lg font-semibold tracking-tight">Build one typed run</h2>
+              <h2 id="input-heading" className="mt-1 text-lg font-semibold tracking-tight">Run a saved task</h2>
             </div>
-            <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[10px] text-muted-foreground">{questions ? Object.keys(questions).length : 0} questions · one shared state</span>
+            <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[10px] text-muted-foreground">{runTask ? Object.keys(runTask.questions).length : 0} questions · one shared state</span>
           </div>
+          <label className="mt-5 block text-sm font-medium">Saved task
+            <select aria-label="Saved task" value={restoredDraft ? "restored" : runTemplate?.id ?? ""} className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring" onChange={(event) => { setRunTemplateId(event.target.value); setRestoredDraft(null); }}>
+              <option value="" disabled>Select a saved task</option>
+              {restoredDraft && <option value="restored">Restored draft · {restoredDraft.taskName}</option>}
+              {snapshot.templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+            </select>
+          </label>
+          {runTask ? <div className="mt-3 text-xs leading-5 text-muted-foreground">
+            <p className="font-medium text-foreground">{restoredDraft ? `Restored draft · ${restoredDraft.taskName}` : runTemplate?.name}</p>
+            <p>{restoredDraft ? `Snapshot from run ${restoredDraft.id}. Runs independently, even if the saved template was deleted.` : runTemplate?.description}</p>
+            <p>{Object.entries(runTask.questions).map(([id, question]) => `${id} (${isJsonObject(question) ? question.type : "unknown"})`).join(" · ")}</p>
+          </div> : <p className="mt-3 text-xs text-muted-foreground">No saved task selected. Create or import a template in Task library.</p>}
 
           {snapshot.runtime.state !== "ready" && (
             <div role="status" className={`mt-4 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs leading-5 ${snapshot.runtime.state === "recovery" ? "border-amber-300/70 bg-amber-50/60 dark:border-amber-950 dark:bg-amber-950/20" : "border-border bg-background"}`}>
@@ -510,97 +594,25 @@ export function Workbench() {
             {stateValidationError && <p role="alert" className="mt-1 text-xs text-destructive">{stateValidationError}</p>}
           </div>
 
-          <div className="mt-4 flex items-center justify-between gap-2">
-            <div><p className="text-sm font-semibold">Questions</p><p className="mt-0.5 text-[10px] text-muted-foreground">Choice · Noul · Score</p></div>
-            {selectedTemplate && <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => chooseTemplate(selectedTemplate)}>Reset to saved</Button>}
-          </div>
-
-          <div className="mt-3 max-h-[520px] overflow-y-auto pr-1">
-            <WorkbenchQuestionEditor
-              questions={questions}
-              onChange={setQuestions}
-              taskName={taskName}
-              setTaskName={setTaskName}
-              taskId={taskId}
-              setTaskId={setTaskId}
-              description={templateDescription}
-              setDescription={setTemplateDescription}
-              onValidationError={setEditorError}
-            />
-          </div>
-          {questionValidationError && !editorError && <p role="alert" className="mt-2 text-xs text-destructive">{questionValidationError}</p>}
-
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
             <Button type="button" size="sm" className="rounded-lg px-3" disabled={isRunDisabled} onClick={() => void runDraft()}>
               {pendingAction === "run" ? <Activity className="size-3.5 animate-pulse" /> : <Play className="size-3.5" />}
               {pendingAction === "run" ? "Running…" : "Run task"}
             </Button>
-            <Button type="button" variant="outline" size="sm" className="rounded-lg" disabled={pendingAction !== null || !taskName.trim() || !taskId.trim() || !!questionValidationError || !!editorError} onClick={() => void saveCurrentTemplate()}>
-              <Save className="size-3.5" /> {templateId ? "Update template" : "Save template"}
-            </Button>
-            {selectedTemplate && <Button type="button" variant="ghost" size="sm" className="rounded-lg text-muted-foreground hover:text-destructive" disabled={pendingAction !== null} onClick={() => void deleteCurrentTemplate()}><Trash2 className="size-3.5" /> Delete template</Button>}
-            {taskName.trim() && <span className="ml-auto text-[10px] text-muted-foreground">Edits do not change saved runs.</span>}
+            <span className="text-xs text-muted-foreground">Results belong to the submitted snapshot, not later input changes.</span>
           </div>
         </section>
 
-        <section className="min-w-0 space-y-4 xl:col-start-3 xl:row-start-1" aria-label="Run results and task file tools">
-          <WorkbenchResults record={displayedRecord} busy={pendingAction === "run"} error={runError} />
-
-          {displayedRecord && (
-            <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-card p-3 shadow-sm shadow-black/[0.02]">
-              <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg" onClick={() => restoreRun(displayedRecord)}><ArrowDownToLine className="size-3.5" /> Restore to editor</Button>
-              <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg" disabled={!modelReadyForSelection || pendingAction !== null} onClick={() => void runDraft({
-                stateMode: displayedRecord.stateMode,
-                stateText: formatState(displayedRecord),
-                questions: cloneJson(displayedRecord.questions),
-                taskId: displayedRecord.taskId,
-                taskName: displayedRecord.taskName,
-              })}><Play className="size-3.5" /> Rerun snapshot</Button>
-              <Button type="button" variant="ghost" size="sm" className="ml-auto h-8 rounded-lg text-muted-foreground hover:text-destructive" disabled={pendingAction !== null} onClick={() => void deleteRun(displayedRecord)}><Trash2 className="size-3.5" /> Delete run</Button>
-            </div>
-          )}
-
-          <section className="rounded-2xl border border-border bg-card p-4 shadow-sm shadow-black/[0.025] sm:p-5" aria-labelledby="interop-heading">
-            <div className="flex items-start justify-between gap-3">
-              <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700 dark:text-blue-300">Portability</p><h2 id="interop-heading" className="mt-1 text-base font-semibold">Task configuration</h2></div>
-              <FileOutput className="size-4 text-muted-foreground" />
-            </div>
-            <label className="mt-3 block text-xs font-medium text-muted-foreground">
-              Project description <span className="font-normal">(optional export metadata)</span>
-              <Input aria-label="Project description" value={projectDescription} maxLength={1000} onBlur={(event) => {
-                if (event.target.value !== (snapshot.settings.projectDescription ?? "")) void updatePreference("projectDescription", event.target.value);
-              }} onChange={(event) => setProjectDescription(event.target.value)} className="mt-1 h-9 bg-background text-xs shadow-none" placeholder="A short description for consumer scripts" />
-            </label>
-            <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <label className="text-xs font-medium text-muted-foreground">
-                Export model
-                <select aria-label="Export model" value={snapshot.settings.exportModel} disabled={pendingAction !== null} onChange={(event) => {
-                  if (isModelId(event.target.value)) void updatePreference("exportModel", event.target.value);
-                }} className="mt-1 h-9 w-full rounded-lg border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  {(["kev-4b", "kev-0.8b"] as ModelId[]).map((model) => <option key={model} value={model}>{modelChoice(model).label}</option>)}
-                </select>
-              </label>
-              <Button type="button" variant="outline" size="sm" className="mt-auto h-9 rounded-lg" disabled={pendingAction !== null || snapshot.templates.length === 0} onClick={() => void exportConfiguration()}><FileOutput className="size-3.5" /> Export</Button>
-            </div>
-            <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-background px-3 py-2.5 text-xs font-medium transition-colors hover:border-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20">
-              <FileInput className="size-3.5 text-blue-700 dark:text-blue-300" /> Import kev-project-tasks/1
-              <input aria-label="Import task configuration" type="file" accept="application/json,.json" className="sr-only" disabled={pendingAction !== null} onChange={(event) => {
-                void importFile(event.target.files?.[0]);
-                event.currentTarget.value = "";
-              }} />
-            </label>
-            {notice?.includes("exported to") && <p role="status" className="mt-2 break-all rounded-lg bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check className="mr-1 inline size-3" />{notice}</p>}
-            <p className="mt-2 text-[10px] leading-4 text-muted-foreground">Imports replace the saved template list only after full validation. Exports contain logical model IDs and task definitions, never state, history, or machine paths.</p>
-          </section>
-
-          {operationError && <div role="alert" className="flex gap-2 rounded-xl border border-destructive/25 bg-destructive/5 p-3 text-xs leading-5 text-destructive"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" />{operationError}</div>}
-          {notice && !notice.includes("exported to") && <div role="status" className="flex gap-2 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-xs leading-5 text-blue-950 dark:border-blue-950 dark:bg-blue-950/30 dark:text-blue-100"><Check className="mt-0.5 size-3.5 shrink-0" />{notice}</div>}
+        <section className="min-w-0 space-y-4" aria-label="Run results">
+          <WorkbenchResults key={displayedRecord?.id ?? "run"} record={displayedRecord} busy={pendingAction === "run"} error={runError} />
         </section>
+          </div>}
+        </div>
       </div>
 
       <footer className="mx-auto flex max-w-[1720px] flex-wrap items-center justify-between gap-2 px-4 pb-5 text-[10px] text-muted-foreground sm:px-6 xl:px-8">
         <p className="flex items-center gap-1.5"><Activity className="size-3" /> One state, isolated typed questions, canonical System One response</p>
-        <p>History stays in this checkout · <Link href="/classic" className="underline underline-offset-2 hover:text-foreground">Open classic Playground</Link></p>
+         <p>History stays in this checkout</p>
       </footer>
     </main>
   );

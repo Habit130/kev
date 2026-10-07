@@ -111,6 +111,7 @@ test.beforeEach(async ({ page }) => {
   expect(settings.status).toBe(200);
   await page.reload();
   await expect(page.getByRole("heading", { name: "本地模型工作台" })).toBeVisible();
+  await page.locator("details[aria-label='Model controls'] > summary").click();
 });
 
 test("hydrates responsively with accessible empty, light, and dark states", async ({ page }) => {
@@ -118,7 +119,9 @@ test("hydrates responsively with accessible empty, light, and dark states", asyn
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   await expect(page.getByRole("button", { name: "加载模型" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "旧版 Playground" })).toHaveAttribute("href", "/classic");
+  await page.getByText("More tools", { exact: true }).click();
+  await expect(page.getByRole("link", { name: "Classic Playground" })).toHaveAttribute("href", "/classic");
+  await expect(page.getByRole("link", { name: "Chess", exact: true })).toHaveAttribute("href", "/chess");
   await expect(page.getByText("No run selected")).toBeVisible();
   await expect(page.locator("html")).toHaveClass(/light/);
   await expect(page.locator("html")).not.toHaveClass(/dark/);
@@ -126,7 +129,7 @@ test("hydrates responsively with accessible empty, light, and dark states", asyn
   const getLayoutMetrics = () => page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
     document: document.documentElement.scrollWidth,
-    panels: [...document.querySelectorAll("aside[aria-label], section[aria-labelledby='input-heading'], section[aria-label='Run results and task file tools']")]
+    panels: [...document.querySelectorAll("aside[aria-label='Workspace navigation'], section[aria-labelledby='input-heading'], section[aria-label='Run results']")]
       .map((element) => {
         const rect = element.getBoundingClientRect();
         return { left: rect.left, right: rect.right, width: rect.width, height: rect.height };
@@ -203,6 +206,7 @@ test("edits a typed task, freezes submitted input, persists history, and restore
   const template = (initial.templates as Record<string, unknown>[])[0];
   expect(template.name).toBe("支持请求");
   expect(Object.keys(template.questions as Record<string, unknown>)).toEqual(["category", "needs_review", "urgency"]);
+  await page.getByRole("button", { name: "Task library", exact: true }).click();
 
   await page.getByLabel("Question category ID").fill("needs_review");
   await expect(page.getByRole("alert").filter({ hasText: "already used" })).toBeVisible();
@@ -230,6 +234,7 @@ test("edits a typed task, freezes submitted input, persists history, and restore
   await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
 
   const literalState = "  Synthetic state: <|question_1|> is literal text.\nDo not trim or rewrite.  ";
+  await page.getByRole("button", { name: "Run", exact: true }).click();
   await page.getByRole("textbox", { name: "State input" }).fill(literalState);
   await configureRuntime(page, { delayMs: 4_000 });
 
@@ -245,7 +250,9 @@ test("edits a typed task, freezes submitted input, persists history, and restore
   await expect(page.getByRole("status").filter({ hasText: "Running one submitted state" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Running…" })).toBeDisabled();
   await page.getByRole("textbox", { name: "State input" }).fill("Changed after submission; this is a later editor draft.");
+  await page.getByRole("button", { name: "Task library", exact: true }).click();
   await page.getByLabel("Question category instructions").fill("Later editor text must not change this run.");
+  await page.getByRole("button", { name: "Run", exact: true }).click();
   await expect(page.getByRole("button", { name: "Stop" })).toBeDisabled();
   await expect(page.getByLabel("Selected model")).toBeDisabled();
 
@@ -287,6 +294,7 @@ test("edits a typed task, freezes submitted input, persists history, and restore
   const persisted = JSON.parse(readFileSync(historyPath, "utf8")) as Record<string, unknown>;
   expect(persisted.state).toBe(literalState);
   expect(persisted.questions).toEqual(record.questions);
+  writeFileSync(path.join(EVIDENCE_ROOT, "submitted-request-snapshot.json"), JSON.stringify({ submittedBody, record, persisted }, null, 2));
 
   const reopened = await browser.newContext();
   const reopenedPage = await reopened.newPage();
@@ -305,18 +313,21 @@ test("edits a typed task, freezes submitted input, persists history, and restore
   await reopened.close();
 
   const refreshedTemplate = page.getByLabel("Template name");
+  await page.getByRole("button", { name: "Task library", exact: true }).click();
   await refreshedTemplate.fill("New version; old history stays frozen");
   await page.getByRole("button", { name: "Update template" }).click();
   const afterTemplateEdit = await apiGet(page);
   const unchangedRecord = (afterTemplateEdit.history as Record<string, unknown>[]).find((item) => item.id === record.id);
   expect(unchangedRecord).toEqual(record);
 
+  await page.getByRole("button", { name: "History", exact: true }).click();
   await page.getByRole("button", { name: /Edited synthetic support task/ }).click();
-  await page.getByRole("button", { name: "Restore to editor" }).click();
+  await page.getByRole("button", { name: "Restore to draft" }).click();
   await expect(page.getByRole("textbox", { name: "State input" })).toHaveValue(literalState);
-  await expect(page.getByLabel("Template name")).toHaveValue("Edited synthetic support task");
+  await expect(page.getByRole("combobox", { name: "Saved task" })).toHaveValue("restored");
   expect(((await apiGet(page)).history as Record<string, unknown>[])).toHaveLength(1);
 
+  await page.getByRole("button", { name: "History", exact: true }).click();
   await page.getByRole("button", { name: "Rerun snapshot" }).click();
   await expect(page.getByText("Typed results")).toBeVisible();
   await expect.poll(async () => ((await apiGet(page)).history as Record<string, unknown>[]).length).toBe(2);
@@ -329,6 +340,7 @@ test("edits a typed task, freezes submitted input, persists history, and restore
 });
 
 test("imports structured multi-task configs, exports them portably, and rejects invalid imports atomically", async ({ page, browser }) => {
+  await page.getByRole("button", { name: "Task library", exact: true }).click();
   const fixture = {
     schema: "kev-project-tasks/1",
     model: "kev-0.8b",
@@ -562,4 +574,218 @@ test("serializes duplicate loads and stop requests, rejects cross-origin calls a
     if (existsSync(historyLink)) unlinkSync(historyLink);
     if (existsSync(sentinel)) unlinkSync(sentinel);
   }
+});
+
+test("separates saved execution, unfinished library edits, result provenance and deleted-template restores", async ({ page, browser }) => {
+  const before = await apiGet(page);
+  const saved = (before.templates as { id: string; questions: unknown }[])[0];
+  await page.getByRole("button", { name: "加载模型" }).click();
+  await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
+  await page.getByRole("textbox", { name: "State input" }).fill("Unfinished run input");
+  await page.getByRole("button", { name: "Task library", exact: true }).click();
+  await page.getByLabel("Question category instructions").fill("UNSAVED library questions must not leak to Run");
+  await page.getByRole("button", { name: "Advanced JSON", exact: true }).click();
+  await page.getByRole("textbox", { name: /Questions JSON/ }).fill("{ unfinished advanced draft");
+  await page.getByRole("button", { name: "History", exact: true }).click();
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "State input" })).toHaveValue("Unfinished run input");
+  await expect(page.getByLabel("Template name")).not.toBeVisible();
+  await expect(page.getByLabel("Import task configuration")).not.toBeVisible();
+  await page.getByRole("button", { name: "JSON", exact: true }).click();
+  await page.getByRole("textbox", { name: "State input" }).fill("{ invalid");
+  await expect(page.getByRole("alert").filter({ hasText: "Object keys must be strings" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run task" })).toBeDisabled();
+  await page.getByRole("textbox", { name: "State input" }).fill('{"synthetic":"literal JSON"}');
+  await page.getByRole("button", { name: "Run task" }).click();
+  await expect(page.getByRole("article", { name: "category Choice result" })).toBeVisible();
+  let current = await apiGet(page);
+  const first = (current.history as Record<string, unknown>[])[0];
+  expect(first.questions).toEqual(saved.questions);
+  expect(first.state).toEqual({ synthetic: "literal JSON" });
+  await page.getByRole("textbox", { name: "State input" }).fill('{"later":"input"}');
+  await expect(page.getByLabel("Result provenance")).toContainText(String(first.id));
+  await page.getByRole("button", { name: "Task library", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: /Questions JSON/ })).toHaveValue("{ unfinished advanced draft");
+  await page.getByRole("button", { name: "Close JSON editor", exact: true }).click();
+  await expect(page.getByLabel("Question category instructions")).toHaveValue("UNSAVED library questions must not leak to Run");
+  await page.getByRole("button", { name: "Create new task template" }).click();
+  await page.getByLabel("Template name").fill("Task B synthetic");
+  await page.getByLabel("Export task ID").fill("task-b");
+  await page.getByRole("button", { name: "Save template", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Template saved");
+  current = await apiGet(page);
+  const second = (current.templates as { id: string; name: string }[]).find((item) => item.name === "Task B synthetic")!;
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await page.getByRole("combobox", { name: "Saved task", exact: true }).selectOption(second.id);
+  await expect(page.getByLabel("Result provenance")).toContainText(String(first.taskName));
+  await expect(page.getByLabel("Result provenance")).not.toContainText("Task B synthetic");
+  await page.getByRole("button", { name: "Task library", exact: true }).click();
+  await page.getByRole("button", { name: /支持请求/ }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete template" }).click();
+  await expect.poll(async () => (await apiGet(page)).templates).toEqual([expect.objectContaining({ id: second.id })]);
+  await page.getByRole("button", { name: "History", exact: true }).click();
+  await page.getByRole("button", { name: /支持请求/ }).click();
+  await page.getByRole("button", { name: "Restore to draft" }).click();
+  await expect(page.getByRole("combobox", { name: "Saved task", exact: true })).toHaveValue("restored");
+  expect((await apiGet(page)).history).toEqual([first]);
+  await page.getByRole("button", { name: "Run task" }).click();
+  await expect.poll(async () => ((await apiGet(page)).history as unknown[]).length).toBe(2);
+  const after = await apiGet(page);
+  expect((after.history as Record<string, unknown>[])[0].questions).toEqual(first.questions);
+  expect((after.history as Record<string, unknown>[])[0].state).toEqual(first.state);
+  expect(after.templates).toEqual([expect.objectContaining({ id: second.id })]);
+  const reopened = await browser.newContext();
+  const nextPage = await reopened.newPage();
+  await nextPage.goto("/");
+  await expect(nextPage.getByRole("combobox", { name: "Saved task", exact: true })).toHaveValue(second.id);
+  expect((await apiGet(nextPage)).history).toEqual(after.history);
+  await reopened.close();
+  writeFileSync(path.join(EVIDENCE_ROOT, "state-boundaries.json"), JSON.stringify({ before, first, after }, null, 2));
+});
+
+test("captures synthetic visual states, canonical displayed values and keyboard navigation", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  await page.locator("details[aria-label='Model controls'] > summary").click();
+  await expect(page.getByRole("button", { name: "加载模型" })).not.toBeVisible();
+  const capture = async (state: string) => {
+    for (const [width, height] of [[1440, 900], [1024, 768], [600, 800]]) {
+      await page.setViewportSize({ width, height });
+      for (const theme of ["light", "dark"] as const) {
+        if (!await page.locator("html").evaluate((node, value) => node.classList.contains(value), theme)) {
+          await page.getByRole("button", { name: theme === "light" ? "Use light theme" : "Use dark theme" }).click();
+        }
+        await expect(page.locator("html")).toHaveClass(new RegExp(theme));
+        await expect.poll(() => page.getByRole("button", { name: "Task library", exact: true }).evaluate((element) => getComputedStyle(element).color === getComputedStyle(document.querySelector("main")!).color)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        await page.screenshot({ path: path.join(EVIDENCE_ROOT, `synthetic-ux-${state}-${width}x${height}-${theme}.png`), fullPage: true });
+      }
+    }
+  };
+  await capture("empty");
+  const libraryNav = page.getByRole("button", { name: "Task library", exact: true });
+  await libraryNav.focus();
+  await expect(libraryNav).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Task library", exact: true })).toBeVisible();
+  await page.screenshot({ path: path.join(EVIDENCE_ROOT, "synthetic-task-library.png"), fullPage: true });
+  await page.getByRole("button", { name: "Run", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await page.locator("details[aria-label='Model controls'] > summary").focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "加载模型" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
+  await page.locator("details[aria-label='Model controls'] > summary").click();
+  await page.getByLabel("State input", { exact: true }).fill("Synthetic visual and canonical result verification");
+  await configureRuntime(page, { failure: "run" });
+  await page.getByRole("button", { name: "Run task" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Run not completed", { exact: true })).toBeVisible();
+  await capture("error");
+  await configureRuntime(page, { failure: "none", delayMs: 5000 });
+  await page.getByRole("button", { name: "Run task" }).click();
+  await expect(page.getByRole("button", { name: "Running…" })).toBeDisabled();
+  // Theme persistence shares the mutation gate while running; capture each theme in a separate delayed run.
+  for (const theme of ["dark", "light"] as const) {
+    if (theme === "light") {
+      await expect(page.getByRole("article", { name: "category Choice result" })).toBeVisible();
+      await page.getByRole("button", { name: "Use light theme" }).click();
+      await page.getByRole("button", { name: "Run task" }).click();
+    }
+    for (const [width, height] of [[1440, 900], [1024, 768]]) {
+      await page.setViewportSize({ width, height });
+      await page.screenshot({ path: path.join(EVIDENCE_ROOT, `synthetic-ux-loading-${width}x${height}-${theme}.png`), fullPage: true });
+    }
+  }
+  await expect(page.getByRole("article", { name: "category Choice result" })).toBeVisible();
+  const snapshot = await apiGet(page);
+  const record = (snapshot.history as { response: { answers: Record<string, Record<string, unknown>>; usage: { input_tokens: number; output_tokens: number }; latency_ms: number } }[])[0];
+  const answers = record.response.answers;
+  await expect(page.getByRole("article", { name: "category Choice result" })).toContainText(String(answers.category.choice));
+  await expect(page.getByRole("article", { name: "category Choice result" })).toContainText(`confidence ${Number(answers.category.confidence).toFixed(3)}`);
+  await expect(page.getByRole("article", { name: "needs_review Noul result" })).toContainText(`p(yes) ${Number(answers.needs_review.noul).toFixed(3)}`);
+  await expect(page.getByRole("article", { name: "urgency Score result" })).toContainText(`Expected level ${Number(answers.urgency.score).toFixed(3)}`);
+  for (const [id, kind] of [["category", "Choice"], ["urgency", "Score"]]) {
+    for (const probability of Object.values(answers[id].probabilities as Record<string, number>)) {
+      await expect(page.getByRole("article", { name: `${id} ${kind} result` })).toContainText(probability.toFixed(3));
+    }
+  }
+  await expect(page.getByRole("article", { name: "needs_review Noul result" })).toContainText((1 - Number(answers.needs_review.noul)).toFixed(3));
+  await expect(page.getByText(`${record.response.usage.input_tokens} input tokens`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`${record.response.usage.output_tokens} output tokens`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`${record.response.latency_ms.toFixed(1)} ms`, { exact: true })).toBeVisible();
+  await expect(page.getByText("Checkpoint", { exact: true })).not.toBeVisible();
+  await expect(page.getByRole("region", { name: "Raw request and response" })).not.toBeVisible();
+  await capture("success");
+  await page.getByRole("button", { name: "Inspect raw" }).click();
+  await expect(page.getByRole("region", { name: "Raw request and response" })).toContainText('"latency_ms": 42');
+  await page.getByText("Actual model details", { exact: true }).click();
+  await expect(page.getByText("Checkpoint", { exact: true })).toBeVisible();
+  await page.screenshot({ path: path.join(EVIDENCE_ROOT, "synthetic-secondary-details.png"), fullPage: true });
+  await page.getByRole("button", { name: "History", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await page.screenshot({ path: path.join(EVIDENCE_ROOT, "synthetic-history.png"), fullPage: true });
+  await page.getByText("More tools", { exact: true }).click();
+  await expect(page.getByRole("link", { name: "Classic Playground" })).toHaveAttribute("href", "/classic");
+  await expect(page.getByRole("link", { name: "Chess", exact: true })).toHaveAttribute("href", "/chess");
+  await page.screenshot({ path: path.join(EVIDENCE_ROOT, "synthetic-more-tools.png"), fullPage: true });
+  expect(errors.filter((error) => error !== "Failed to load resource: the server responded with a status of 503 (Service Unavailable)")).toEqual([]);
+  expect(errors.filter((error) => error === "Failed to load resource: the server responded with a status of 503 (Service Unavailable)")).toHaveLength(1);
+  writeFileSync(path.join(EVIDENCE_ROOT, "visual-keyboard-canonical.json"), JSON.stringify({ errors, snapshot, keyboard: ["navigation", "model expansion/load", "run"] }, null, 2));
+});
+
+test("opens pre-redesign persisted synthetic records unchanged and keeps long distributions inspectable", async ({ page }) => {
+  const appBytes = readFileSync(path.join(process.cwd(), "tests/workbench/fixtures/pre-redesign-workbench.json"), "utf8");
+  const runBytes = readFileSync(path.join(process.cwd(), "tests/workbench/fixtures/pre-redesign-run.json"), "utf8");
+  const app = JSON.parse(appBytes) as { templates: { id: string }[] };
+  const run = JSON.parse(runBytes) as { id: string; state: string };
+  writeFileSync(path.join(DATA_ROOT, "workbench.json"), appBytes, { mode: 0o600 });
+  writeFileSync(path.join(DATA_ROOT, "history", `${run.id}.json`), runBytes, { mode: 0o600 });
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Saved task", exact: true })).toHaveValue(app.templates[0].id);
+  const opened = await apiGet(page);
+  expect(opened.templates).toEqual(app.templates);
+  expect(opened.history).toEqual([run]);
+  await page.getByRole("button", { name: "History", exact: true }).click();
+  await page.getByRole("button", { name: /支持请求/ }).click();
+  await expect(page.getByLabel("Result provenance")).toContainText(run.id);
+  await page.getByRole("button", { name: "Restore to draft" }).click();
+  await expect(page.getByLabel("State input", { exact: true })).toHaveValue(run.state);
+  expect(readFileSync(path.join(DATA_ROOT, "history", `${run.id}.json`), "utf8")).toBe(runBytes);
+  expect(readFileSync(path.join(DATA_ROOT, "workbench.json"), "utf8")).toBe(appBytes);
+  writeFileSync(path.join(EVIDENCE_ROOT, "pre-redesign-readback.json"), JSON.stringify(opened, null, 2));
+
+  const longLabel = "A long synthetic ordered level label that must remain readable without relying on a truncated legend or pointer hover";
+  const imported = await apiPost(page, { action: "import", content: JSON.stringify({ schema: "kev-project-tasks/1", model: "kev-4b", tasks: { long: { questions: { long_score: { type: "score", criteria: [longLabel, "Other level"] } } } } }) });
+  expect(imported.status).toBe(200);
+  await page.reload();
+  await page.locator("details[aria-label='Model controls'] > summary").click();
+  await page.getByRole("button", { name: "加载模型" }).click();
+  await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
+  await page.locator("details[aria-label='Model controls'] > summary").click();
+  await page.getByLabel("State input", { exact: true }).fill("Synthetic long-label input");
+  await page.getByRole("button", { name: "Run task" }).click();
+  const label = page.getByRole("article", { name: "long_score Score result" }).getByText(`0 · ${longLabel}`, { exact: true });
+  await expect(label).toBeVisible();
+  expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(EVIDENCE_ROOT, "synthetic-long-label.png"), fullPage: true });
+});
+
+test("keeps dark navigation and input colors in the workbench theme scope", async ({ page }) => {
+  await page.getByRole("button", { name: "Use dark theme" }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect.poll(() => page.getByRole("button", { name: "Task library", exact: true }).evaluate((element) => getComputedStyle(element).color === getComputedStyle(document.querySelector("main")!).color)).toBe(true);
+  const styles = await page.evaluate(() => {
+    const inspect = (element: Element) => {
+      const style = getComputedStyle(element);
+      return { tag: element.tagName, classes: element.className, color: style.color, background: style.backgroundColor, foreground: style.getPropertyValue("--foreground"), secondary: style.getPropertyValue("--secondary"), input: style.getPropertyValue("--input") };
+    };
+    return { html: inspect(document.documentElement), body: inspect(document.body), main: inspect(document.querySelector("main")!), nav: inspect(document.querySelector("nav button:nth-child(2)")!), input: inspect(document.querySelector("#state-input")!) };
+  });
+  writeFileSync(path.join(EVIDENCE_ROOT, "dark-theme-styles.json"), JSON.stringify(styles, null, 2));
+  expect(styles.nav.color).toBe(styles.main.color);
+  expect(styles.input.foreground).toBe(styles.main.foreground);
 });
