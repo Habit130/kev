@@ -89,6 +89,7 @@ test.beforeEach(async ({ page }) => {
     loadFailure: "none",
     closeFailure: false,
     historyWriteFailure: false,
+    settingsWriteFailure: false,
   });
 
   const previous = await apiGet(page);
@@ -106,11 +107,11 @@ test.beforeEach(async ({ page }) => {
   expect(imported.status).toBe(200);
   const settings = await apiPost(page, {
     action: "settings",
-    settings: { selectedModel: "kev-4b", exportModel: "kev-4b", theme: "light", projectDescription: null },
+    settings: { selectedModel: "kev-4b", exportModel: "kev-4b", theme: "light", locale: "en", projectDescription: null },
   });
   expect(settings.status).toBe(200);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "本地模型工作台" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Local model workbench" })).toBeVisible();
   await page.locator("details[aria-label='Model controls'] > summary").click();
 });
 
@@ -118,7 +119,7 @@ test("hydrates responsively with accessible empty, light, and dark states", asyn
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await expect(page.getByRole("button", { name: "加载模型" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load model" })).toBeVisible();
   await page.getByText("More tools", { exact: true }).click();
   await expect(page.getByRole("link", { name: "Classic Playground" })).toHaveAttribute("href", "/classic");
   await expect(page.getByRole("link", { name: "Chess", exact: true })).toHaveAttribute("href", "/chess");
@@ -157,7 +158,7 @@ test("hydrates responsively with accessible empty, light, and dark states", asyn
   await expect(page.locator("html")).toHaveClass(/light/);
   await page.screenshot({ path: path.join(EVIDENCE_ROOT, "deterministic-empty-1024x768-light.png") });
 
-  const getButton = page.getByRole("button", { name: "加载模型" });
+  const getButton = page.getByRole("button", { name: "Load model" });
   await getButton.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
@@ -170,7 +171,7 @@ test("hydrates responsively with accessible empty, light, and dark states", asyn
 test("keeps the selected model distinct and switches the resident model only after confirmation", async ({ page }) => {
   await page.getByLabel("Selected model").selectOption("kev-0.8b");
   await expect.poll(async () => ((await apiGet(page)).settings as Record<string, unknown>).selectedModel).toBe("kev-0.8b");
-  await page.getByRole("button", { name: "加载模型" }).click();
+  await page.getByRole("button", { name: "Load model" }).click();
   await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
   expect((await apiGet(page)).runtime).toEqual(expect.objectContaining({
     state: "ready",
@@ -195,7 +196,7 @@ test("keeps the selected model distinct and switches the resident model only aft
 
   await page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Stop" }).click();
-  await expect(page.getByRole("button", { name: "加载模型" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load model" })).toBeVisible();
   expect((await apiGet(page)).runtime).toEqual(expect.objectContaining({ state: "unloaded", identity: null }));
 });
 
@@ -228,7 +229,7 @@ test("edits a typed task, freezes submitted input, persists history, and restore
   const savedTemplate = (await apiGet(page)).templates as Record<string, unknown>[];
   expect((savedTemplate[0].questions as Record<string, { criteria?: unknown }>).question_4.criteria).toEqual({ true: "An optional first criterion." });
 
-  const loadButton = page.getByRole("button", { name: "加载模型" });
+  const loadButton = page.getByRole("button", { name: "Load model" });
   await loadButton.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
@@ -432,21 +433,21 @@ test("imports structured multi-task configs, exports them portably, and rejects 
 
 test("reports load, inference, persistence, and close failures without inventing a ready or saved result", async ({ page }) => {
   await configureRuntime(page, { loadFailure: "busy" });
-  await page.getByRole("button", { name: "加载模型" }).click();
+  await page.getByRole("button", { name: "Load model" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Another Kev project currently owns the model slot" })).toBeVisible();
   expect((await apiGet(page)).runtime).toEqual(expect.objectContaining({ state: "unloaded" }));
 
   await configureRuntime(page, { loadFailure: "unavailable" });
-  await page.getByRole("button", { name: "加载模型" }).click();
+  await page.getByRole("button", { name: "Load model" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "prerequisites are unavailable" })).toBeVisible();
 
   await configureRuntime(page, { loadFailure: "startup" });
-  await page.getByRole("button", { name: "加载模型" }).click();
+  await page.getByRole("button", { name: "Load model" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Model startup failed" })).toBeVisible();
   expect((await apiGet(page)).runtime).toEqual(expect.objectContaining({ state: "unloaded" }));
 
   await configureRuntime(page, { loadFailure: "none" });
-  await page.getByRole("button", { name: "加载模型" }).click();
+  await page.getByRole("button", { name: "Load model" }).click();
   await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
   await page.getByRole("textbox", { name: "State input" }).fill("Synthetic controlled failure input");
 
@@ -498,7 +499,7 @@ test("reports load, inference, persistence, and close failures without inventing
   await configureRuntime(page, { closeFailure: false });
   await page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Stop" }).click();
-  await expect(page.getByRole("button", { name: "加载模型" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load model" })).toBeVisible();
   expect((await apiGet(page)).runtime).toEqual(expect.objectContaining({ state: "unloaded" }));
 });
 
@@ -579,7 +580,7 @@ test("serializes duplicate loads and stop requests, rejects cross-origin calls a
 test("separates saved execution, unfinished library edits, result provenance and deleted-template restores", async ({ page, browser }) => {
   const before = await apiGet(page);
   const saved = (before.templates as { id: string; questions: unknown }[])[0];
-  await page.getByRole("button", { name: "加载模型" }).click();
+  await page.getByRole("button", { name: "Load model" }).click();
   await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
   await page.getByRole("textbox", { name: "State input" }).fill("Unfinished run input");
   await page.getByRole("button", { name: "Task library", exact: true }).click();
@@ -649,7 +650,7 @@ test("captures synthetic visual states, canonical displayed values and keyboard 
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await page.locator("details[aria-label='Model controls'] > summary").click();
-  await expect(page.getByRole("button", { name: "加载模型" })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Load model" })).not.toBeVisible();
   const capture = async (state: string) => {
     for (const [width, height] of [[1440, 900], [1024, 768], [600, 800]]) {
       await page.setViewportSize({ width, height });
@@ -675,7 +676,7 @@ test("captures synthetic visual states, canonical displayed values and keyboard 
   await page.keyboard.press("Enter");
   await page.locator("details[aria-label='Model controls'] > summary").focus();
   await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "加载模型" }).focus();
+  await page.getByRole("button", { name: "Load model" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
   await page.locator("details[aria-label='Model controls'] > summary").click();
@@ -745,25 +746,27 @@ test("opens pre-redesign persisted synthetic records unchanged and keeps long di
   writeFileSync(path.join(DATA_ROOT, "workbench.json"), appBytes, { mode: 0o600 });
   writeFileSync(path.join(DATA_ROOT, "history", `${run.id}.json`), runBytes, { mode: 0o600 });
   await page.reload();
-  await expect(page.getByRole("combobox", { name: "Saved task", exact: true })).toHaveValue(app.templates[0].id);
+  await expect(page.getByRole("combobox", { name: "已保存任务", exact: true })).toHaveValue(app.templates[0].id);
   const opened = await apiGet(page);
   expect(opened.templates).toEqual(app.templates);
   expect(opened.history).toEqual([run]);
-  await page.getByRole("button", { name: "History", exact: true }).click();
+  await page.getByRole("button", { name: "历史记录", exact: true }).click();
   await page.getByRole("button", { name: /支持请求/ }).click();
-  await expect(page.getByLabel("Result provenance")).toContainText(run.id);
-  await page.getByRole("button", { name: "Restore to draft" }).click();
-  await expect(page.getByLabel("State input", { exact: true })).toHaveValue(run.state);
+  await expect(page.getByLabel("结果来源")).toContainText(run.id);
+  await page.getByRole("button", { name: "恢复为草稿" }).click();
+  await expect(page.getByLabel("状态输入", { exact: true })).toHaveValue(run.state);
   expect(readFileSync(path.join(DATA_ROOT, "history", `${run.id}.json`), "utf8")).toBe(runBytes);
   expect(readFileSync(path.join(DATA_ROOT, "workbench.json"), "utf8")).toBe(appBytes);
   writeFileSync(path.join(EVIDENCE_ROOT, "pre-redesign-readback.json"), JSON.stringify(opened, null, 2));
+  await page.getByRole("button", { name: "English", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
 
   const longLabel = "A long synthetic ordered level label that must remain readable without relying on a truncated legend or pointer hover";
   const imported = await apiPost(page, { action: "import", content: JSON.stringify({ schema: "kev-project-tasks/1", model: "kev-4b", tasks: { long: { questions: { long_score: { type: "score", criteria: [longLabel, "Other level"] } } } } }) });
   expect(imported.status).toBe(200);
   await page.reload();
   await page.locator("details[aria-label='Model controls'] > summary").click();
-  await page.getByRole("button", { name: "加载模型" }).click();
+  await page.getByRole("button", { name: "Load model" }).click();
   await expect(page.getByRole("button", { name: "Switch model" })).toBeVisible();
   await page.locator("details[aria-label='Model controls'] > summary").click();
   await page.getByLabel("State input", { exact: true }).fill("Synthetic long-label input");

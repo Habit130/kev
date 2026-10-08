@@ -61,6 +61,7 @@ export type TestControls = {
   loadFailure: "none" | "busy" | "unavailable" | "startup";
   closeFailure: boolean;
   historyWriteFailure: boolean;
+  settingsWriteFailure: boolean;
 };
 
 const defaultControls: TestControls = {
@@ -69,6 +70,7 @@ const defaultControls: TestControls = {
   loadFailure: "none",
   closeFailure: false,
   historyWriteFailure: false,
+  settingsWriteFailure: false,
 };
 
 class ConsumerFailure extends Error {
@@ -130,6 +132,7 @@ export function readTestControls(): TestControls {
       loadFailure: raw.loadFailure === "busy" || raw.loadFailure === "unavailable" || raw.loadFailure === "startup" ? raw.loadFailure : "none",
       closeFailure: raw.closeFailure === true,
       historyWriteFailure: raw.historyWriteFailure === true,
+      settingsWriteFailure: raw.settingsWriteFailure === true,
     };
   } catch {
     return defaultControls;

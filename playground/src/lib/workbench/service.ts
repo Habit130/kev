@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { WorkbenchError } from "@/lib/workbench/errors";
+import { isLocale, type Locale } from "@/lib/workbench/locale";
 import { cloneJson, isJsonObject, parseJson, type JsonObject, type JsonValue } from "@/lib/workbench/json";
 import {
   createHistoryId,
@@ -37,7 +38,7 @@ function activeRunIds(): Set<string> {
   return root[activeRunKey];
 }
 
-export type PublicSettings = Pick<WorkbenchSettings, "selectedModel" | "exportModel" | "theme" | "projectDescription">;
+export type PublicSettings = Pick<WorkbenchSettings, "selectedModel" | "exportModel" | "theme" | "locale" | "projectDescription">;
 
 export type WorkbenchSnapshot = {
   settings: PublicSettings;
@@ -51,6 +52,7 @@ function publicSettings(settings: WorkbenchSettings): PublicSettings {
     selectedModel: settings.selectedModel,
     exportModel: settings.exportModel,
     theme: settings.theme,
+    locale: settings.locale,
     ...(settings.projectDescription === undefined ? {} : { projectDescription: settings.projectDescription }),
   };
 }
@@ -68,7 +70,7 @@ export async function getWorkbenchSnapshot(): Promise<WorkbenchSnapshot> {
 
 export function updateSettings(value: unknown): WorkbenchAppFile {
   if (!isJsonObject(value)) throw new WorkbenchError("Settings must be a JSON object.", "invalid_input", 400);
-  const supported = new Set(["selectedModel", "exportModel", "theme", "projectDescription"]);
+  const supported = new Set(["selectedModel", "exportModel", "theme", "locale", "projectDescription"]);
   const unexpected = Object.keys(value).filter((key) => !supported.has(key));
   if (unexpected.length) throw new WorkbenchError(`Unsupported setting${unexpected.length === 1 ? "" : "s"}: ${unexpected.join(", ")}.`, "invalid_input", 400);
   if ("selectedModel" in value && !isModelId(value.selectedModel)) {
@@ -80,6 +82,12 @@ export function updateSettings(value: unknown): WorkbenchAppFile {
   if ("theme" in value && value.theme !== "light" && value.theme !== "dark") {
     throw new WorkbenchError("Theme must be light or dark.", "invalid_input", 400);
   }
+  if ("locale" in value && !isLocale(value.locale)) {
+    throw new WorkbenchError("Language must be zh-CN or en.", "invalid_input", 400);
+  }
+  if (isDeterministicTestMode() && readTestControls().settingsWriteFailure) {
+    throw new WorkbenchError("Controlled settings persistence failure.", "storage_error", 500);
+  }
   if ("projectDescription" in value && value.projectDescription !== undefined && typeof value.projectDescription !== "string") {
     if (value.projectDescription !== null) throw new WorkbenchError("Project description must be text.", "invalid_input", 400);
   }
@@ -89,6 +97,7 @@ export function updateSettings(value: unknown): WorkbenchAppFile {
       ...(value.selectedModel === undefined ? {} : { selectedModel: value.selectedModel as ModelId }),
       ...(value.exportModel === undefined ? {} : { exportModel: value.exportModel as ModelId }),
       ...(value.theme === undefined ? {} : { theme: value.theme as "light" | "dark" }),
+      ...(value.locale === undefined ? {} : { locale: value.locale as Locale }),
       ...(typeof value.projectDescription === "string" ? { projectDescription: value.projectDescription } : {}),
     };
     if (value.projectDescription === null) delete settings.projectDescription;
@@ -257,7 +266,7 @@ export async function deterministicTestAction(value: unknown): Promise<{ ok: tru
   if (!isDeterministicTestMode()) throw new WorkbenchError("Test controls are unavailable.", "not_found", 404);
   const body = requiredObject(value, "Test controls");
   if (body.action === "configure") {
-    const permitted = new Set(["action", "delayMs", "failure", "loadFailure", "closeFailure", "historyWriteFailure"]);
+    const permitted = new Set(["action", "delayMs", "failure", "loadFailure", "closeFailure", "historyWriteFailure", "settingsWriteFailure"]);
     if (Object.keys(body).some((key) => !permitted.has(key))) throw new WorkbenchError("Unsupported test control.", "invalid_input", 400);
     const current = readTestControls();
     const next: TestControls = {
@@ -266,6 +275,7 @@ export async function deterministicTestAction(value: unknown): Promise<{ ok: tru
       loadFailure: body.loadFailure === undefined ? current.loadFailure : body.loadFailure === "none" || body.loadFailure === "busy" || body.loadFailure === "unavailable" || body.loadFailure === "startup" ? body.loadFailure : "invalid" as TestControls["loadFailure"],
       closeFailure: body.closeFailure === undefined ? current.closeFailure : body.closeFailure === true,
       historyWriteFailure: body.historyWriteFailure === undefined ? current.historyWriteFailure : body.historyWriteFailure === true,
+      settingsWriteFailure: body.settingsWriteFailure === undefined ? current.settingsWriteFailure : body.settingsWriteFailure === true,
     };
     if (next.delayMs < 0 || next.delayMs > 5_000 || next.failure === ("invalid" as TestControls["failure"]) || next.loadFailure === ("invalid" as TestControls["loadFailure"])) {
       throw new WorkbenchError("Test control values are invalid.", "invalid_input", 400);
