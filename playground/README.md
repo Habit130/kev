@@ -27,7 +27,38 @@ Keep the Terminal window opened by the launcher running. To stop the web app, cl
 
 The workbench is at `/`. **More tools** links to Classic at `/classic` and Chess at `/chess`. These independent tools require their own Kev API backend (`KEV_API`, default `http://127.0.0.1:8009`); loading a workbench model does not configure them.
 
-## Templates, runs, and local data
+## Interface language / 界面语言
+
+The header's **简体中文 / English** selector is available in Run, Task library,
+and History. Simplified Chinese is the default, regardless of browser language.
+The successfully saved choice is a project-level preference in
+`.local/playground/workbench/workbench.json`, shared by new tabs and browser
+contexts and retained across app restarts. Missing or unsupported saved locales
+fall back to Chinese; other saved-data validation remains unchanged. A failed
+save keeps the previous language and shows an error; select the language again
+to retry. No cookies or browser-profile locale store is used.
+
+Switching translates application headings, controls, help, dialogs, notices,
+accessible labels, lifecycle and failure summaries, results and display units.
+Dates use the selected locale and the browser's existing time zone; probabilities,
+confidence and expected levels keep three decimals, latency one decimal, token
+counts integers. Raw JSON retains canonical formatting and values. Original
+diagnostics remain inspectable under **诊断详情 / Diagnostic details**; errors
+are classified by stable category, never by translated text.
+
+Language changes preserve unfinished template and Advanced JSON text, input,
+restored drafts, selected task/model/history and displayed results. Language saves
+are separate from run/model exclusion: switching during a run neither resubmits
+nor cancels it, and the eventual result uses the current interface language.
+
+Task names/descriptions, generated examples, question/option IDs and contents,
+inputs, model IDs, saved snapshots, score legends and canonical responses are
+**data, not translations**. Classic and Chess remain independent pages; only
+their workbench entries/help are translated. Browser/OS dialog chrome is outside
+application copy. No translation service or extra network translation request,
+model-quality change, inference prompt translation or new language is introduced.
+
+## Templates and workflow
 
 - **Run** opens first: select a saved task, read its summary, enter Text or JSON, and use **Run task**. Input and results sit side by side on wide screens, stacking on smaller screens. Results identify their submitted task/run and actual model independently of later selection or input changes. Full model identity and raw response are secondary details; long distribution labels wrap.
 - **Task library** owns create/select/edit/save/update/delete and configuration import/export. Choice options and Score levels retain their order; optional Noul criteria can be added or omitted. **Advanced JSON** is available on demand for supported structured values. Unfinished edits and run input survive routine in-tab view changes; unsaved library edits do not replace Run's saved questions. Reloading a tab discards unfinished drafts.
@@ -53,6 +84,32 @@ npm run test:workbench
 ```
 
 The deterministic browser suite uses isolated synthetic inputs and stores both test data and evidence below project-local `.local/` paths. The real MLX suite is `npm run test:workbench:native`; it requires the authorized existing model pairings, an available exclusive Metal workload, and a separate sequential resource check. Do not treat deterministic doubles as native model evidence.
+
+The deterministic entry point also runs `tests/workbench/workbench.locale.spec.ts`:
+default/legacy/unsupported settings and failed-save retry; bilingual coverage;
+actual-server errors; unfinished drafts and held genuine run replies; historical
+bytes/export integrity; fixed format fixtures, both sizes/themes and keyboard.
+No frontend or inference response is substituted: delayed-response scenarios
+hold and replay the actual local server response unchanged.
+
+### Translation inventory
+
+| Application surface | Observable verification |
+| --- | --- |
+| Shell, navigation, theme, language, More tools, initial loading/empty | LANG-DEFAULT, LANG-COVERAGE; bilingual initial-loading and library captures |
+| Model readiness, selection, load/switch/stop, confirmation and recovery help | Core lifecycle regressions; LANG-ERRORS and model controls in both languages |
+| Saved task, shared input, literal-text help, run/restored draft and notices | LANG-STATE; retained core saved-versus-unsaved and restore scenarios |
+| Visual Choice/Noul/Score editor, dynamic accessible labels, Advanced JSON, validation | LANG-COVERAGE and LANG-ERRORS; bilingual library/import/questions captures |
+| Import replacement help, export/save feedback and delete dialogs | LANG-COVERAGE; bilingual success captures and recorded dialog messages |
+| History outcomes/actions, provenance, raw/details and all three result types | LANG-COVERAGE, LANG-ERRORS, LANG-INTEGRITY; core history/outcome assertions |
+| Invalid input/import, unready/busy/startup/stop/length/inference/storage failures | LANG-ERRORS; identical categories/statuses and original diagnostics in both languages |
+| Timestamps, precision/units, themes/sizes, keyboard and document language | LANG-FORMAT; fixed fixtures, accessibility snapshots and browser error observation |
+
+`src/lib/workbench/translations.ts` is the finite application-copy dictionary;
+`locale.ts` owns locale validation/defaults and display formatting. Raw IDs,
+payloads, diagnostics and browser-owned file-picker chrome are intentionally
+outside this inventory. Unexpected categories get a localized summary with
+inspectable original detail instead of guessing from a translated sentence.
 
 The native browser harness still uses the pre-redesign combined-view selectors. Its navigation adaptation and authorized native rerun are deferred; the redesign's verification uses only the deterministic entry point above, not a native quality or performance claim.
 

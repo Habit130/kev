@@ -15,6 +15,7 @@ import {
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { WorkbenchError } from "@/lib/workbench/errors";
+import { storedLocale, type Locale } from "@/lib/workbench/locale";
 import { isJsonObject, orderedObject, parseJson, parseJsonObject, setOrdered, stringifyJson, type JsonObject, type JsonValue } from "@/lib/workbench/json";
 import {
   defaultTemplates,
@@ -38,6 +39,7 @@ export type WorkbenchSettings = {
   selectedModel: ModelId;
   exportModel: ModelId;
   theme: "light" | "dark";
+  locale: Locale;
   projectDescription?: string;
   sessionPath: string | null;
   pendingModel: ModelId | null;
@@ -176,6 +178,7 @@ function defaultAppFile(): WorkbenchAppFile {
       selectedModel: "kev-4b",
       exportModel: "kev-4b",
       theme: "light",
+      locale: "zh-CN",
       sessionPath: null,
       pendingModel: null,
       recoverySessionPath: null,
@@ -208,6 +211,7 @@ function validateAppFile(value: JsonValue): WorkbenchAppFile {
     }
   }
   validateTemplateList(app.templates);
+  settings.locale = storedLocale(settings.locale);
   return value as unknown as WorkbenchAppFile;
 }
 
