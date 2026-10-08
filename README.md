@@ -225,9 +225,9 @@ A model you fine-tuned with the `kev-finetune` skill deploys the same way from i
 
 On macOS, complete the [project-local setup](playground/README.md#one-time-setup), then double-click [`bin/kev-playground.command`](bin/kev-playground.command). It starts the workbench on loopback, waits for readiness, and opens the browser. From a terminal, run `./bin/kev-playground.command`. The launcher uses the checkout's Node 22 and frontend dependencies; it does not install software globally or download models. A listener already using port 3001 is left untouched.
 
-The workbench starts with Kev-4B selected. Load a registered local model explicitly, edit a saved task or create one with Choice, Noul, and Score questions, then submit literal text or JSON. Results and run history remain tied to the submitted snapshot, including the actual loaded checkpoint identity. Templates, history, runtime files, and exports stay under the ignored `.local/playground/` directory. See the [workbench guide](playground/README.md) for setup, recovery, storage, and model limitations.
+The workbench opens on **Run**, with Kev-4B selected: expand **Model** to load explicitly, select a saved task, and submit literal Text or JSON. **Task library** owns typed authoring and import/export; unsaved edits stay separate from routine execution. **History** inspects frozen runs, restores identifiable drafts without overwriting templates, reruns with the currently selected ready model, and deletes individual records. Results remain tied to their submitted snapshot and actual model, not later selections. Templates, history, runtime files, and exports stay under ignored `.local/playground/`. See the [workbench guide](playground/README.md) for setup, recovery, storage, and model limitations.
 
-The earlier Playground remains at [localhost:3001/classic](http://localhost:3001/classic); its chess demo remains at [localhost:3001/chess](http://localhost:3001/chess). The workbench does not use browser storage for templates or history.
+**More tools** retains [Classic](http://localhost:3001/classic) and [Chess](http://localhost:3001/chess), independent tools requiring their own `KEV_API` backend setup. A loaded workbench model does not make them ready. The workbench does not use browser storage for templates or history.
 
 ![Classic Kev playground](docs/playground.png)
 

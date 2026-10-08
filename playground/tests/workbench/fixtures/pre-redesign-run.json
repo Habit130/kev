@@ -1,0 +1,90 @@
+{
+  "id": "4640b15b-d659-47f7-b65f-7c54e4f56ee9",
+  "submittedAt": "2026-10-06T00:26:02.054Z",
+  "status": "succeeded",
+  "stateMode": "text",
+  "taskId": "support-review",
+  "taskName": "支持请求",
+  "state": "One synthetic request; switch waits for the frozen run.",
+  "questions": {
+    "category": {
+      "type": "choice",
+      "instructions": "Which category best matches this synthetic request?",
+      "criteria": {
+        "billing": "A charge, invoice, or payment question",
+        "delivery": "A shipment, delay, or missing package",
+        "returns": "A refund, exchange, or damaged item"
+      }
+    },
+    "needs_review": {
+      "type": "noul",
+      "instructions": "Does this synthetic request need a person to review it?",
+      "criteria": {
+        "true": "The request needs individual attention",
+        "false": "The standard process is enough"
+      }
+    },
+    "urgency": {
+      "type": "score",
+      "instructions": "How soon should this synthetic request be reviewed?",
+      "criteria": [
+        "When convenient",
+        "Within a few days",
+        "Today"
+      ]
+    }
+  },
+  "modelIdentity": {
+    "modelId": "kev-4b",
+    "checkpoint": {
+      "source": "jaredpalmer/kev-4b",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "base": {
+      "source": "Qwen/Qwen3.5-4B-Base",
+      "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "backend": "deterministic-test-double",
+    "dtype": "float32",
+    "device": "test"
+  },
+  "response": {
+    "model": "kev-4b",
+    "answers": {
+      "category": {
+        "type": "choice",
+        "choice": "billing",
+        "confidence": 0.43,
+        "probabilities": {
+          "billing": 0.62,
+          "delivery": 0.19,
+          "returns": 0.19
+        }
+      },
+      "needs_review": {
+        "type": "noul",
+        "noul": 0.73
+      },
+      "urgency": {
+        "type": "score",
+        "score": 0.6666666666666666,
+        "confidence": 0,
+        "legend": {
+          "0": "When convenient",
+          "1": "Within a few days",
+          "2": "Today"
+        },
+        "probabilities": {
+          "0": 0.5,
+          "1": 0.3333333333333333,
+          "2": 0.16666666666666666
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 120,
+      "output_tokens": 12
+    },
+    "latency_ms": 42
+  }
+}

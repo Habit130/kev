@@ -1,0 +1,47 @@
+{
+  "schema": "kev-workbench/1",
+  "settings": {
+    "selectedModel": "kev-4b",
+    "exportModel": "kev-4b",
+    "theme": "light",
+    "sessionPath": null,
+    "pendingModel": null,
+    "recoverySessionPath": null
+  },
+  "templates": [
+    {
+      "taskId": "support-review",
+      "name": "支持请求",
+      "description": "支持请求",
+      "questions": {
+        "category": {
+          "type": "choice",
+          "instructions": "Which category best matches this synthetic request?",
+          "criteria": {
+            "billing": "A charge, invoice, or payment question",
+            "delivery": "A shipment, delay, or missing package",
+            "returns": "A refund, exchange, or damaged item"
+          }
+        },
+        "needs_review": {
+          "type": "noul",
+          "instructions": "Does this synthetic request need a person to review it?",
+          "criteria": {
+            "true": "The request needs individual attention",
+            "false": "The standard process is enough"
+          }
+        },
+        "urgency": {
+          "type": "score",
+          "instructions": "How soon should this synthetic request be reviewed?",
+          "criteria": [
+            "When convenient",
+            "Within a few days",
+            "Today"
+          ]
+        }
+      },
+      "id": "b8ef9c12-7b02-4575-86f3-15de914cc309"
+    }
+  ]
+}
