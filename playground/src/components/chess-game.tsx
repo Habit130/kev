@@ -29,34 +29,32 @@ function topMass(probs: Record<string, number>, n: number) {
   return Object.values(probs).sort((a, b) => b - a).slice(0, n).reduce((s, p) => s + p, 0);
 }
 
-// Fixed-height panel: always renders `nRows` bar lanes and one-line header fields, so the column never shifts
-// when the number of legal moves changes or while the model is thinking.
+// Always renders `nRows` lanes so an empty distribution keeps its place. Labels wrap instead of truncating.
 function DistributionPanel({ id, title, headline, detail, rows, nRows, mono, footer, dim }: {
   id: string; title: string; headline?: string; detail?: string; rows: Row[]; nRows: number; mono?: boolean; footer?: string; dim?: boolean;
 }) {
-  const lanes = "grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_2.75rem] items-center gap-x-3";
   return (
-    <section aria-labelledby={`p-${id}`} className={`grid gap-3 rounded-md border border-border bg-card px-4 py-3 transition-opacity md:grid-cols-[11rem_minmax(0,1fr)] md:gap-6 ${dim ? "opacity-60" : ""}`}>
+    <section aria-labelledby={`p-${id}`} className={`grid gap-3 rounded-lg border border-border bg-card px-4 py-3 transition-opacity md:grid-cols-[14rem_minmax(0,1fr)] md:gap-6 ${dim ? "opacity-60" : ""}`}>
       <div className="flex min-w-0 flex-col">
-        <h3 id={`p-${id}`} className="font-mono text-[12px] text-muted-foreground">{id}</h3>
-        <p className="mt-0.5 h-10 text-[13px] leading-5 text-foreground">{title}</p>
-        <p className={`mt-1.5 h-6 truncate text-base font-medium tracking-tight ${mono ? "font-mono" : ""}`}>{headline ?? "\u00a0"}</p>
-        <p className="h-5 text-[12px] tabular-nums text-muted-foreground">{detail ?? "\u00a0"}</p>
+        <h3 id={`p-${id}`} className="font-mono text-xs text-muted-foreground">{id}</h3>
+        <p className="mt-1 min-h-10 text-sm leading-5 text-foreground">{title}</p>
+        <p className={`mt-1.5 min-h-6 break-words text-base font-medium tracking-tight ${mono ? "font-mono" : ""}`}>{headline ?? "\u00a0"}</p>
+        <p className="min-h-5 text-xs tabular-nums text-muted-foreground">{detail ?? "\u00a0"}</p>
       </div>
-      <div className="flex min-w-0 flex-col">
+      <div className="flex min-w-0 flex-col gap-1">
         {Array.from({ length: nRows }, (_, i) => {
           const r = rows[i];
           return (
-            <div key={i} className={`${lanes} h-5 text-[12px]`}>
-              <span className={`truncate ${mono ? "font-mono" : ""} ${r?.top ? "text-foreground" : "text-muted-foreground"}`} title={r?.key}>{r?.key ?? "\u00a0"}</span>
-              <span className="relative block h-1 min-w-0 rounded-full bg-muted" aria-hidden>
-                {r && <span className={`absolute inset-y-0 left-0 rounded-full ${r.top ? "bg-foreground" : "bg-muted-foreground/50"}`} style={{ width: `${Math.round(r.p * 100)}%` }} />}
+            <div key={i} className="grid min-h-5 grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-3 text-xs">
+              <span className={`min-w-0 break-words ${mono ? "font-mono" : ""} ${r?.top ? "font-medium text-foreground" : "text-muted-foreground"}`}>{r ? `${r.key}${r.top ? " · shown" : ""}` : "\u00a0"}</span>
+              <span className="text-right tabular-nums text-muted-foreground">{r ? r.p.toFixed(2) : "\u00a0"}</span>
+              <span className="relative col-span-2 block h-2 min-w-0 rounded-full bg-distribution-track" aria-hidden>
+                {r && <span className="absolute inset-y-0 left-0 rounded-full bg-distribution" style={{ width: `${Math.round(r.p * 100)}%` }} />}
               </span>
-              <span className={`text-right tabular-nums ${r?.top ? "text-foreground" : "text-muted-foreground"}`}>{r ? r.p.toFixed(2) : "\u00a0"}</span>
             </div>
           );
         })}
-        {footer !== undefined && <p className="mt-1 h-4 text-[11px] text-muted-foreground">{footer}</p>}
+        {footer !== undefined && <p className="mt-1 min-h-4 break-words text-xs text-muted-foreground">{footer}</p>}
       </div>
     </section>
   );
@@ -188,18 +186,18 @@ export function ChessGame() {
   useEffect(() => { movesRef.current?.scrollTo({ top: movesRef.current.scrollHeight }); }, [game?.moves.length]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col px-6 pt-8 pb-16 md:px-10">
+    <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col px-6 pt-8 pb-16 md:px-10">
       <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <nav className="flex items-baseline gap-4 text-[15px]">
+        <nav className="flex items-baseline gap-4 text-sm">
           <Link href="/" className="text-muted-foreground hover:text-foreground">kev</Link>
           <span className="font-medium tracking-tight">chess</span>
         </nav>
-        <p className="text-[13px] text-muted-foreground">{model ? <span className="font-mono">{model}</span> : "connecting"}</p>
+        <p className="min-w-0 max-w-full break-all text-sm text-muted-foreground">{model ? <span className="font-mono">{model}</span> : "connecting"}</p>
       </header>
 
       <div className="mt-10 max-w-2xl">
         <h1 className="text-2xl font-medium tracking-tight">Every move is a Choice question.</h1>
-        <p className="mt-2 text-[15px] leading-6 text-muted-foreground">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           The legal moves are the options, the board is the state. The model returns a probability for each move and a Score for who is better, in one request. The model has never seen a chess game, so expect the distributions to be more interesting than the play.
         </p>
       </div>
@@ -230,18 +228,18 @@ export function ChessGame() {
             <Button variant="ghost" onClick={() => start(mode)} className="rounded-md text-muted-foreground">New game</Button>
             <div className="ml-auto flex items-center gap-2">
               <Switch id="sample" checked={sample} onCheckedChange={(v) => setSample(!!v)} size="sm" />
-              <Label htmlFor="sample" className="text-[13px] text-muted-foreground">Sample from distribution</Label>
+              <Label htmlFor="sample" className="text-sm text-muted-foreground">Sample from distribution</Label>
             </div>
           </div>
 
-          <p className="min-h-5 text-[13px] text-muted-foreground">
+          <p className="min-h-5 text-sm text-muted-foreground" role="status">
             {game?.result ? <span className="text-foreground">{game.result}</span>
               : thinking ? "Model is choosing"
               : humanToMove ? `Your move (${humanSide === "w" ? "White" : "Black"}). Click a piece, then a square.`
               : `${chess.turn() === "w" ? "White" : "Black"} to move`}
             {chess.inCheck() && !game?.result ? " · check" : ""}
           </p>
-          {error && <pre className="whitespace-pre-wrap text-[13px] text-destructive">{error}</pre>}
+          {error && <pre role="alert" className="max-w-full overflow-x-auto whitespace-pre-wrap break-all text-sm text-destructive">{error}</pre>}
         </div>
 
         <div className="flex min-w-0 flex-col gap-3">
@@ -254,12 +252,12 @@ export function ChessGame() {
             headline={lastModel ? `${lastModel.evaluation.toFixed(2)} of 4` : undefined} detail={lastModel?.evalConfidence !== undefined ? `confidence ${lastModel.evalConfidence.toFixed(2)}` : undefined}
             rows={EVAL_LEVELS.map((l, i) => ({ key: `${i}  ${l}`, p: lastModel?.evalProbabilities[String(i)] ?? 0, top: !!lastModel && i === Math.round(lastModel.evaluation) }))} nRows={EVAL_LEVELS.length}
             dim={thinking} />
-          <p className="h-5 text-[13px] tabular-nums text-muted-foreground">
+          <p className="min-h-5 text-xs tabular-nums text-muted-foreground">
             {lastModel ? `${lastModel.latency_ms.toFixed(0)} ms · ${lastModel.input_tokens} input tokens · ${lastModel.n_legal} options` : "The model's distribution appears here after its first move."}
           </p>
 
           <div className="rounded-md border border-border bg-card px-4 py-3">
-            <p className="text-[12px] text-muted-foreground">Moves</p>
+            <p className="text-xs text-muted-foreground">Moves</p>
             <ol ref={movesRef} className="mt-1 grid h-40 grid-cols-[2.5rem_1fr_1fr] content-start gap-y-0.5 overflow-y-auto font-mono text-[13px] tabular-nums">
               {Array.from({ length: Math.ceil((game?.moves.length ?? 0) / 2) }, (_, i) => (
                 <li key={i} className="contents">
@@ -275,11 +273,11 @@ export function ChessGame() {
       </div>
 
       <div className="mt-8 rounded-md border border-border bg-card px-4 py-3">
-        <p className="text-[12px] text-muted-foreground">Previous games (stored in this browser)</p>
+        <p className="text-xs text-muted-foreground">Previous games (stored in this browser)</p>
         {finished.length === 0 ? (
-          <p className="mt-1 text-[13px] text-muted-foreground">None yet. Finished games are listed here.</p>
+          <p className="mt-1 text-sm text-muted-foreground">None yet. Finished games are listed here.</p>
         ) : (
-          <ul className="mt-1 grid gap-x-8 text-[13px] md:grid-cols-2">
+          <ul className="mt-1 grid gap-x-8 text-sm md:grid-cols-2">
             {[...finished].reverse().slice(0, 8).map((g) => (
               <li key={g.id} className="flex items-baseline justify-between gap-3 py-0.5">
                 <span className="text-muted-foreground">{new Date(g.startedAt).toLocaleString()} · {MODES.find((m) => m.value === g.mode)?.label}</span>

@@ -27,6 +27,12 @@ Keep the Terminal window opened by the launcher running. To stop the web app, cl
 
 The workbench is at `/`. **More tools** links to Classic at `/classic` and Chess at `/chess`. These independent tools require their own Kev API backend (`KEV_API`, default `http://127.0.0.1:8009`); loading a workbench model does not configure them.
 
+## Precision Workbench
+
+The visual language is a calm instrument for one shared state, isolated typed questions, and inspectable probabilities. It is not a chat composer, marketing landing page, or generic dashboard. Tokens, type roles, spacing, and the checked Skill decisions live in [`design-system/MASTER.md`](design-system/MASTER.md).
+
+Both light and dark themes remain. The saved workbench theme is an explicit class on the document and takes precedence over the operating-system preference; a missing setting stays light. Classic and Chess share those tokens and the saved appearance for first paint. They do not load a workbench model or change their own storage. Chess coordinates are the only text smaller than 12px. Probabilities are distributions, not correctness.
+
 ## Interface language / 界面语言
 
 The header's **简体中文 / English** selector is available in Run, Task library,
@@ -115,4 +121,4 @@ The native browser harness still uses the pre-redesign combined-view selectors. 
 
 ## Attribution and licenses
 
-The workbench shell adapts the sidebar/inset layout pattern from the official [shadcn Dashboard block](https://ui.shadcn.com/examples/dashboard); shadcn/ui is MIT-licensed ([license](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md)). [Kiranism's dashboard](https://github.com/Kiranism/next-shadcn-dashboard-starter) was consulted as a visual reference only; no Kiranism application source or assets are copied. Its project is MIT-licensed ([license](https://github.com/Kiranism/next-shadcn-dashboard-starter/blob/main/LICENSE)). The workbench-specific controls, persistence, and interactions are Kev code.
+The workbench shell adapts the sidebar/inset layout pattern from the official [shadcn Dashboard block](https://ui.shadcn.com/examples/dashboard); shadcn/ui is MIT-licensed ([license](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md)). [Kiranism's dashboard](https://github.com/Kiranism/next-shadcn-dashboard-starter) was consulted as a visual reference only; no Kiranism application source or assets are copied. Its project is MIT-licensed ([license](https://github.com/Kiranism/next-shadcn-dashboard-starter/blob/main/LICENSE)). The Precision Workbench tokens, controls, persistence, and interactions are Kev code. No remote font or icon library is added.

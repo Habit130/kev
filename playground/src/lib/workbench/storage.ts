@@ -225,6 +225,20 @@ export function readAppFile(): WorkbenchAppFile {
   return validateAppFile(saved);
 }
 
+/** Read-only first paint. Does not create or rewrite the settings file. */
+export function readSavedAppearance(): { theme: "light" | "dark"; locale: Locale } {
+  try {
+    const saved = readJsonFile("workbench.json");
+    if (!isJsonObject(saved) || !isJsonObject(saved.settings)) return { theme: "light", locale: "zh-CN" };
+    return {
+      theme: saved.settings.theme === "dark" ? "dark" : "light",
+      locale: storedLocale(saved.settings.locale),
+    };
+  } catch {
+    return { theme: "light", locale: "zh-CN" };
+  }
+}
+
 export function writeAppFile(app: WorkbenchAppFile): void {
   validateAppFile(app as unknown as JsonValue);
   atomicWrite("workbench.json", `${stringifyJson(app as unknown as JsonValue, 2)}\n`);

@@ -14,15 +14,17 @@ function numberValue(value: unknown): number | null {
 }
 
 function ProbabilityBar({ label, probability, selected }: { label: string; probability: number; selected?: boolean }) {
-  const { number } = useWorkbenchLocale();
+  const { number, t } = useWorkbenchLocale();
   const safe = Math.max(0, Math.min(probability, 1));
   return (
-    <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)_3.5rem] items-center gap-2.5 text-xs" title={label}>
-      <span className={`break-words ${selected ? "font-medium text-foreground" : "text-muted-foreground"}`}>{label}</span>
-      <span className="relative h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-        <span className={`absolute inset-y-0 left-0 rounded-full ${selected ? "bg-blue-600 dark:bg-blue-400" : "bg-blue-300 dark:bg-blue-900"}`} style={{ width: `${safe * 100}%` }} />
+    <div className="grid gap-1 text-sm">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className={`min-w-0 break-words ${selected ? "font-medium text-foreground" : "text-foreground"}`}>{label}{selected ? ` · ${t("selected")}` : ""}</span>
+        <span className="shrink-0 font-mono text-xs tabular-nums">{number(probability, 3)}</span>
+      </div>
+      <span className="relative h-2 overflow-hidden rounded-full bg-distribution-track" aria-hidden="true">
+        <span className="absolute inset-y-0 left-0 rounded-full bg-distribution" style={{ width: `${safe * 100}%` }} />
       </span>
-      <span className="text-right font-mono tabular-nums">{number(probability, 3)}</span>
     </div>
   );
 }
@@ -35,13 +37,13 @@ function Answer({ id, answer }: { id: string; answer: JsonValue }) {
   if (answer.type === "choice") {
     const choice = typeof answer.choice === "string" ? answer.choice : "—";
     return (
-      <article className="rounded-xl border border-border bg-background p-4" aria-label={t("{id} Choice result", { id })}>
+      <article className="border-t border-border py-4" aria-label={t("{id} Choice result", { id })}>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate font-mono text-xs text-muted-foreground">{id} <span className="font-sans">· {t("Choice")}</span></p>
+            <p className="break-words font-mono text-xs text-muted-foreground">{id} <span className="font-sans">· {t("Choice")}</span></p>
             <p className="mt-1 break-words text-base font-semibold">{choice}</p>
           </div>
-          {confidence !== null && <span className="rounded-full bg-muted px-2 py-1 font-mono text-[11px] tabular-nums">{t("confidence")} {number(confidence, 3)}</span>}
+          {confidence !== null && <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs tabular-nums">{t("confidence")} {number(confidence, 3)}</span>}
         </div>
         {probabilities && <div className="mt-4 flex flex-col gap-2">{orderedEntries(probabilities).map(([key, value]) => numberValue(value) === null ? null : <ProbabilityBar key={key} label={key} probability={numberValue(value)!} selected={key === choice} />)}</div>}
       </article>
@@ -51,13 +53,13 @@ function Answer({ id, answer }: { id: string; answer: JsonValue }) {
     const yes = numberValue(answer.noul);
     if (yes === null) return null;
     return (
-      <article className="rounded-xl border border-border bg-background p-4" aria-label={t("{id} Noul result", { id })}>
+      <article className="border-t border-border py-4" aria-label={t("{id} Noul result", { id })}>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate font-mono text-xs text-muted-foreground">{id} <span className="font-sans">· {t("Noul")}</span></p>
+            <p className="break-words font-mono text-xs text-muted-foreground">{id} <span className="font-sans">· {t("Noul")}</span></p>
             <p className="mt-1 text-base font-semibold">{t("p(yes)")} {number(yes, 3)}</p>
           </div>
-          <span className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">{t("canonical yes probability")}</span>
+          <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">{t("canonical yes probability")}</span>
         </div>
         <div className="mt-4 flex flex-col gap-2">
           <ProbabilityBar label={t("Yes")} probability={yes} selected={yes >= 0.5} />
@@ -71,13 +73,13 @@ function Answer({ id, answer }: { id: string; answer: JsonValue }) {
     const legend = isJsonObject(answer.legend) ? answer.legend : null;
     if (score === null) return null;
     return (
-      <article className="rounded-xl border border-border bg-background p-4" aria-label={t("{id} Score result", { id })}>
+      <article className="border-t border-border py-4" aria-label={t("{id} Score result", { id })}>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate font-mono text-xs text-muted-foreground">{id} <span className="font-sans">· {t("Score")}</span></p>
+            <p className="break-words font-mono text-xs text-muted-foreground">{id} <span className="font-sans">· {t("Score")}</span></p>
             <p className="mt-1 text-base font-semibold">{t("Expected level")} {number(score, 3)}</p>
           </div>
-          {confidence !== null && <span className="rounded-full bg-muted px-2 py-1 font-mono text-[11px] tabular-nums">{t("confidence")} {number(confidence, 3)}</span>}
+          {confidence !== null && <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs tabular-nums">{t("confidence")} {number(confidence, 3)}</span>}
         </div>
         {probabilities && <div className="mt-4 flex flex-col gap-2">{orderedEntries(probabilities).map(([key, value]) => numberValue(value) === null ? null : <ProbabilityBar key={key} label={`${key}${legend && typeof legend[key] === "string" ? ` · ${legend[key]}` : ""}`} probability={numberValue(value)!} selected={false} />)}</div>}
       </article>
@@ -96,10 +98,10 @@ export function WorkbenchResults({ record, busy, error }: { record: HistoryRecor
   const latency = response ? numberValue(response.latency_ms) : null;
 
   return (
-    <section className="min-w-0 rounded-2xl border border-border bg-card p-4 shadow-sm shadow-black/[0.025] sm:p-5" aria-labelledby="results-heading">
+    <section className="min-w-0 rounded-lg border border-border bg-card p-4 sm:p-5" aria-labelledby="results-heading">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700 dark:text-blue-300">{t("Run output")}</p>
+          <p className="text-xs font-medium text-muted-foreground">{t("Run output")}</p>
           <h2 id="results-heading" className="mt-1 text-lg font-semibold tracking-tight">{t("Typed results")}</h2>
         </div>
         {record?.status === "succeeded" && (
@@ -109,7 +111,7 @@ export function WorkbenchResults({ record, busy, error }: { record: HistoryRecor
         )}
       </div>
 
-      {record && <div className="mt-4 rounded-lg bg-muted/50 p-3 text-xs leading-5" aria-label={t("Result provenance")}>
+      {record && <div className="mt-4 border-t border-border pt-3 text-sm leading-6" aria-label={t("Result provenance")}>
         <p className="break-words font-semibold">{t("Submitted task")} · {record.taskName} ({record.taskId})</p>
         <p className="break-all">{t("Run")} · {record.id} · {time(record.submittedAt)}</p>
         <p>{t("Actual model")} · {identity?.modelId ?? t("unknown")} · {identity?.backend ?? t("unknown")}</p>
@@ -117,30 +119,30 @@ export function WorkbenchResults({ record, busy, error }: { record: HistoryRecor
       </div>}
 
       {busy && (
-        <div role="status" className="mt-5 flex min-h-36 flex-col items-center justify-center rounded-xl border border-dashed border-blue-300 bg-blue-50/70 p-6 text-center dark:border-blue-950 dark:bg-blue-950/30">
-          <span className="size-6 animate-spin rounded-full border-2 border-blue-300 border-t-blue-700 dark:border-blue-800 dark:border-t-blue-300" aria-hidden="true" />
+        <div role="status" className="mt-5 flex min-h-36 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted p-6 text-center">
+          <span className="size-6 animate-spin rounded-full border-2 border-distribution-track border-t-distribution" aria-hidden="true" />
           <p className="mt-3 text-sm font-medium">{t("Running one submitted state against the ready model…")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{t("This panel will show the frozen request’s result, not later editor changes.")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t("This panel will show the frozen request’s result, not later editor changes.")}</p>
         </div>
       )}
 
       {!busy && error && (
-        <div role="alert" className="mt-5 flex gap-3 rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm">
+        <div role="alert" className="mt-5 flex gap-3 rounded-lg border border-destructive bg-error-surface p-4 text-sm">
           <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
           <div><p className="font-semibold text-destructive">{t("Run not completed")}</p><WorkbenchErrorMessage error={error} /></div>
         </div>
       )}
 
       {!busy && !error && !record && (
-        <div className="mt-5 flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-background/60 px-5 text-center">
-          <Sparkles className="size-5 text-blue-600 dark:text-blue-300" />
+        <div className="mt-5 flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed border-border px-5 text-center">
+          <Sparkles className="size-5 text-muted-foreground" aria-hidden="true" />
           <p className="mt-3 text-sm font-medium">{t("No run selected")}</p>
-          <p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">{t("Load a model, add a state, and run a task to see typed probabilities here.")}</p>
+          <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">{t("Load a model, add a state, and run a task to see typed probabilities here.")}</p>
         </div>
       )}
 
       {!busy && !error && record && record.status !== "succeeded" && (
-        <div role="status" className="mt-5 rounded-xl border border-amber-300/70 bg-amber-50/60 p-4 text-sm dark:border-amber-950 dark:bg-amber-950/20">
+        <div role="status" className="mt-5 rounded-lg border border-warning bg-warning-surface p-4 text-sm text-warning">
           <p className="font-semibold">{t(record.status === "interrupted" ? "Run interrupted" : record.status === "running" ? "Run still in progress" : "Run failed")}</p>
           {record.failure ? <WorkbenchErrorMessage error={record.failure} /> : <p className="mt-1 break-words text-muted-foreground">{t("No completed response was saved.")}</p>}
         </div>
@@ -148,12 +150,12 @@ export function WorkbenchResults({ record, busy, error }: { record: HistoryRecor
 
       {!busy && !error && record?.status === "succeeded" && answers && (
         <>
-          <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
             {latency !== null && <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1"><Clock3 className="size-3" /> {number(latency, 1)} {t("ms")}</span>}
             {usage && typeof usage.input_tokens === "number" && <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1"><Database className="size-3" /> {number(usage.input_tokens)} {t("input tokens")}</span>}
             {usage && typeof usage.output_tokens === "number" && <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1"><Gauge className="size-3" /> {number(usage.output_tokens)} {t("output tokens")}</span>}
           </div>
-          <details className="mt-3 rounded-lg border border-border/80 bg-background px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+          <details className="mt-3 rounded-lg border border-border px-3 py-2 text-xs leading-5 text-muted-foreground">
             <summary className="cursor-pointer focus-visible:ring-2 focus-visible:ring-ring">{t("Actual model details")}</summary>
             <p className="break-all"><span className="font-medium text-foreground">{t("Checkpoint")}</span> · {identity?.checkpoint.source ?? t("Unknown")} · {identity?.checkpoint.revision ?? t("pin unavailable")}</p>
             <p className="break-all"><span className="font-medium text-foreground">{t("Base")}</span> · {identity?.base.source ?? t("Unknown")} · {identity?.base.revision ?? t("pin unavailable")}</p>
@@ -163,9 +165,9 @@ export function WorkbenchResults({ record, busy, error }: { record: HistoryRecor
             {orderedEntries(answers).map(([id, answer]) => <Answer key={id} id={id} answer={answer} />)}
           </div>
           {showRaw && (
-            <section className="mt-4 rounded-xl border border-border bg-background p-3" aria-label={t("Raw request and response")}>
-              <p className="text-xs font-semibold">{t("Submitted snapshot and canonical response")}</p>
-              <pre className="mt-2 max-h-[34rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-3 font-mono text-[11px] leading-5">{stringifyJson({
+            <section className="mt-4 rounded-lg border border-border p-3" aria-label={t("Raw request and response")}>
+              <p className="text-sm font-semibold">{t("Submitted snapshot and canonical response")}</p>
+              <pre className="mt-2 max-h-[34rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 font-mono text-xs leading-5">{stringifyJson({
                 request: { state: record.state, model: identity?.modelId ?? "unknown", questions: record.questions },
                 response: response as JsonValue,
               }, 2)}</pre>
@@ -175,7 +177,7 @@ export function WorkbenchResults({ record, busy, error }: { record: HistoryRecor
       )}
 
       {record && (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-[11px] text-muted-foreground">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
           <span className="truncate">{record.taskName} · {time(record.submittedAt)}</span>
           <span className="shrink-0 font-mono uppercase">{t(record.status)}</span>
         </div>
