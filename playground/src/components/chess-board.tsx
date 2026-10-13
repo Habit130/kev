@@ -37,8 +37,8 @@ export function ChessBoard({ chess, selected, targets, lastMove, flipped, onSqua
                 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`}>
               {piece && <span className={piece.color === "w" ? "text-foreground drop-shadow-[0_0_1px_var(--background)]" : "text-foreground"} style={piece.color === "w" ? { WebkitTextStroke: "0.5px var(--foreground)", color: "var(--background)" } : undefined}>{GLYPH[piece.color + piece.type]}</span>}
               {isTarget && <span aria-hidden className={`absolute ${piece ? "inset-1 rounded-sm border-2 border-foreground/50" : "size-2.5 rounded-full bg-foreground/40"}`} />}
-              {f === files[0] && <span aria-hidden className="absolute left-1 top-0.5 text-[9px] text-muted-foreground">{8 - (7 - r)}</span>}
-              {r === ranks[ranks.length - 1] && <span aria-hidden className="absolute bottom-0.5 right-1 text-[9px] text-muted-foreground">{FILES[f]}</span>}
+              {f === files[0] && <span aria-hidden data-pw="coordinate" className="absolute left-1 top-0.5 text-[9px] text-muted-foreground">{8 - (7 - r)}</span>}
+              {r === ranks[ranks.length - 1] && <span aria-hidden data-pw="coordinate" className="absolute bottom-0.5 right-1 text-[9px] text-muted-foreground">{FILES[f]}</span>}
             </button>
           );
         }),

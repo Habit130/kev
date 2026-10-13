@@ -92,20 +92,20 @@ export function Playground() {
   const nQ = result ? Object.keys(result.answers).length : 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col px-6 pt-8 md:px-10">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <nav className="flex items-baseline gap-4 text-[15px]">
+    <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col px-6 pt-8 md:px-10">
+      <header className="flex w-full min-w-0 flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <nav className="flex items-baseline gap-4 text-sm">
           <h1 className="font-medium tracking-tight">kev</h1>
           <Link href="/chess" className="text-muted-foreground hover:text-foreground">chess</Link>
         </nav>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="min-w-0 max-w-full break-all text-sm text-muted-foreground">
           {model === null ? "connecting" : "error" in model ? `backend unavailable: ${model.error}` : <><span className="font-mono">{model.base}</span> · <span className="font-mono">{model.run}</span></>}
         </p>
       </header>
 
       <div className="mt-10 max-w-2xl">
         <h2 className="text-2xl font-medium tracking-tight">Typed questions in, probabilities out, one forward pass.</h2>
-        <p className="mt-2 text-[15px] leading-6 text-muted-foreground">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           The state is read once. Every question is answered in parallel and cannot see the others. Each answer is a distribution over the options you supplied.
         </p>
       </div>
@@ -118,18 +118,18 @@ export function Playground() {
           </button>
         ))}
       </nav>
-      <p className="mt-2 max-w-2xl text-[13px] leading-5 text-muted-foreground">{PRESETS[presetIdx].blurb}</p>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{PRESETS[presetIdx].blurb}</p>
 
-      <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      <div className="mt-8 grid gap-10 pb-28 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <div className="flex min-w-0 flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="state" className="text-[13px]">State <span className="font-normal text-muted-foreground">(text, or a JSON object or array)</span></Label>
-            <Textarea id="state" value={stateText} onChange={(e) => setStateText(e.target.value)} className="min-h-28 rounded-md font-mono text-[13px] leading-5 shadow-none" />
+            <Label htmlFor="state">State <span className="font-normal text-muted-foreground">(text, or a JSON object or array)</span></Label>
+            <Textarea id="state" value={stateText} onChange={(e) => setStateText(e.target.value)} className="min-h-28 font-mono text-sm leading-6 shadow-none" />
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="questions" className="text-[13px]">Questions <span className="font-normal text-muted-foreground">(noul, choice, score)</span></Label>
-            <Textarea id="questions" value={questionsText} onChange={(e) => setQuestionsText(e.target.value)} className="min-h-[28rem] rounded-md font-mono text-[13px] leading-5 shadow-none" aria-invalid={!!parsed.err} />
-            {parsed.err && <p className="text-[13px] text-destructive">{parsed.err}</p>}
+            <Label htmlFor="questions">Questions <span className="font-normal text-muted-foreground">(noul, choice, score)</span></Label>
+            <Textarea id="questions" value={questionsText} onChange={(e) => setQuestionsText(e.target.value)} className="min-h-72 font-mono text-sm leading-6 shadow-none" aria-invalid={!!parsed.err} />
+            {parsed.err && <p role="alert" className="text-sm text-destructive">{parsed.err}</p>}
           </div>
         </div>
 
@@ -142,7 +142,7 @@ export function Playground() {
                 <TabsTrigger value="raw" disabled={!result} className="px-0 text-sm">JSON</TabsTrigger>
               </TabsList>
               {result && (
-                <p className="text-[13px] tabular-nums text-muted-foreground">
+                <p className="text-xs tabular-nums text-muted-foreground">
                   {result.latency_ms.toFixed(0)} ms · {result.usage.input_tokens} input tokens · {nQ} {nQ === 1 ? "question" : "questions"}
                 </p>
               )}
@@ -153,7 +153,7 @@ export function Playground() {
                 <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Run the request to see one distribution per question.</p>
               )}
               {result && separate && (
-                <p className="mb-3 rounded-md border border-border bg-muted/40 px-4 py-2.5 text-[13px] leading-5">
+                <p className="mb-3 rounded-lg border border-border bg-muted px-4 py-2.5 text-sm leading-6">
                   One request with {nQ} questions: <span className="tabular-nums">{result.latency_ms.toFixed(0)} ms</span>, {result.usage.input_tokens} tokens.{" "}
                   {nQ} separate requests: <span className="tabular-nums">{separate.latency_ms.toFixed(0)} ms</span>, {separate.usage.input_tokens} tokens.
                   Largest probability difference between the two: <span className="font-medium tabular-nums">{maxDiff?.toFixed(4)}</span>.
@@ -175,7 +175,7 @@ export function Playground() {
                     {permute.data.argmax_stable ? "The top option is the same in every order." : "The top option changes between orders."}
                   </p>
                   <div className="mt-4 overflow-x-auto">
-                    <table className="w-full text-[13px]">
+                    <table className="w-full text-sm">
                       <caption className="sr-only">Probability of each option under different option orders</caption>
                       <thead>
                         <tr className="border-b border-border text-left text-muted-foreground">
@@ -201,7 +201,7 @@ export function Playground() {
                       </tfoot>
                     </table>
                   </div>
-                  <p className="mt-3 text-[13px] leading-5 text-muted-foreground">Each row is the same question with its options in a different order. A spread above 0.10 is shown in bold.</p>
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">Each row is the same question with its options in a different order. A spread above 0.10 is shown in bold. The table scrolls inside this labelled region when it is wider than the page.</p>
                 </div>
               )}
             </TabsContent>
@@ -210,12 +210,12 @@ export function Playground() {
               {result && (
                 <div className="grid gap-4 xl:grid-cols-2">
                   <div className="rounded-lg border border-border bg-card p-5">
-                    <p className="text-[13px] text-muted-foreground">Request</p>
-                    <pre className="mt-2 max-h-[36rem] overflow-auto font-mono text-[12px] leading-5">{pretty(parsed.req)}</pre>
+                    <p className="text-sm text-muted-foreground">Request</p>
+                    <pre className="mt-2 max-h-[36rem] overflow-auto font-mono text-xs leading-5">{pretty(parsed.req)}</pre>
                   </div>
                   <div className="rounded-lg border border-border bg-card p-5">
-                    <p className="text-[13px] text-muted-foreground">Response</p>
-                    <pre className="mt-2 max-h-[36rem] overflow-auto font-mono text-[12px] leading-5">{pretty(result)}</pre>
+                    <p className="text-sm text-muted-foreground">Response</p>
+                    <pre className="mt-2 max-h-[36rem] overflow-auto font-mono text-xs leading-5">{pretty(result)}</pre>
                   </div>
                 </div>
               )}
@@ -229,7 +229,7 @@ export function Playground() {
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={onRun} disabled={!parsed.req || !!busy} className="rounded-md">
               {busy === "run" ? "Running" : "Run"}
-              <kbd className="ml-1 font-mono text-[11px] font-normal opacity-70">⌘↵</kbd>
+              <kbd className="ml-1 font-mono text-xs font-normal opacity-80">⌘↵</kbd>
             </Button>
             <Button variant="outline" onClick={onSeparate} disabled={!parsed.req || !!busy} className="rounded-md shadow-none" title="Answer every question in its own request, then compare with the packed answer">
               {busy === "separate" ? "Comparing" : "Packed vs separate"}
@@ -240,7 +240,7 @@ export function Playground() {
               </Button>
             ))}
           </div>
-          {error && <pre className="whitespace-pre-wrap text-[13px] text-destructive">{error}</pre>}
+          {error && <pre role="alert" className="max-w-full overflow-x-auto whitespace-pre-wrap break-all text-sm text-destructive">{error}</pre>}
         </div>
       </div>
     </div>

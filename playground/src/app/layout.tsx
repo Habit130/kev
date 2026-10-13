@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { readSavedAppearance } from "@/lib/workbench/storage";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,8 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  const appearance = readSavedAppearance();
   return (
-    <html lang="zh-CN" className="h-full antialiased light">
+    <html lang={appearance.locale} className={`h-full antialiased ${appearance.theme}`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
