@@ -254,7 +254,7 @@ test("GUIDANCE: explains configured questions, example fill, and result meanings
         description: "Mixed synthetic",
         questions: {
           mix_choice: { type: "choice", instructions: "Choose a synthetic bucket.", criteria: { one: "First" } },
-          mix_noul: { type: "noul", instructions: "Is this synthetic?", criteria: { true: "It is synthetic" } },
+          mix_noul: { type: "noul", instructions: "Is this synthetic?", criteria: { true: { note: "structured yes" } } },
           mix_score: { type: "score", instructions: "How synthetic?", criteria: ["Low", "High"] },
         },
       },
@@ -268,14 +268,14 @@ test("GUIDANCE: explains configured questions, example fill, and result meanings
   await expect(page.getByRole("article", { name: "mix_choice Choice result" })).toBeVisible();
   await expect(page.getByRole("article", { name: "mix_noul Noul result" })).toBeVisible();
   await expect(page.getByRole("article", { name: "mix_score Score result" })).toBeVisible();
-  await expect(page.getByText("Yes refers to: It is synthetic")).toBeVisible();
+  await expect(page.getByText('Yes refers to: {"note":"structured yes"}')).toBeVisible();
   await expect(page.getByText("not a percentage").first()).toBeVisible();
   await expect(page.getByText("Only the questions configured for this submitted task are shown.")).toBeVisible();
   const articles = await page.getByRole("article", { name: /result$/ }).count();
   expect(articles).toBe(3);
   await page.screenshot({ path: path.join(evidence, "qa-guidance-mixed-en.png"), fullPage: true });
   await switchLanguage(page, "zh-CN");
-  await expect(page.getByText("“是”指的是：It is synthetic")).toBeVisible();
+  await expect(page.getByText('“是”指的是：{"note":"structured yes"}')).toBeVisible();
   await expect(page.locator("#state-input")).toHaveValue("synthetic mixed");
   await page.screenshot({ path: path.join(evidence, "qa-guidance-mixed-zh.png"), fullPage: true });
   writeFileSync(path.join(evidence, "qa-guidance.json"), JSON.stringify({ articles, templateBytesUnchanged: true }, null, 2));

@@ -29,10 +29,14 @@ function ProbabilityBar({ label, probability, selected }: { label: string; proba
   );
 }
 
+function renderedValue(value: JsonValue | undefined): string {
+  if (value === undefined || value === null || value === "") return "";
+  return typeof value === "string" ? value : stringifyJson(value);
+}
+
 function questionText(question: JsonValue | undefined, key: string): string {
   if (!isJsonObject(question)) return "";
-  const value = question[key];
-  return typeof value === "string" ? value : "";
+  return renderedValue(question[key] as JsonValue | undefined);
 }
 
 function Answer({ id, answer, question }: { id: string; answer: JsonValue; question?: JsonValue }) {
@@ -42,7 +46,8 @@ function Answer({ id, answer, question }: { id: string; answer: JsonValue; quest
   const confidence = numberValue(answer.confidence);
   const instructions = questionText(question, "instructions");
   const criteria = isJsonObject(question) && isJsonObject(question.criteria) ? question.criteria : null;
-  const yesRefers = criteria && typeof criteria.true === "string" && criteria.true ? criteria.true : instructions;
+  const yesCriterion = criteria ? renderedValue(criteria.true as JsonValue | undefined) : "";
+  const yesRefers = yesCriterion || instructions;
   if (answer.type === "choice") {
     const choice = typeof answer.choice === "string" ? answer.choice : "—";
     return (

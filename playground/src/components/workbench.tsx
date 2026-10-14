@@ -758,8 +758,8 @@ function QuestionGuide({ questions, title, description }: { questions: JsonObjec
               )}
               {type === "noul" && isJsonObject(question.criteria) && (
                 <ul className="mt-1 text-muted-foreground">
-                  {typeof question.criteria.true === "string" && <li className="break-words">{t("Yes criterion: {text}", { text: question.criteria.true })}</li>}
-                  {typeof question.criteria.false === "string" && <li className="break-words">{t("No criterion: {text}", { text: question.criteria.false })}</li>}
+                  {criterionText(question.criteria.true as JsonValue | undefined) && <li className="break-words">{t("Yes criterion: {text}", { text: criterionText(question.criteria.true as JsonValue | undefined) })}</li>}
+                  {criterionText(question.criteria.false as JsonValue | undefined) && <li className="break-words">{t("No criterion: {text}", { text: criterionText(question.criteria.false as JsonValue | undefined) })}</li>}
                 </ul>
               )}
               {type === "score" && Array.isArray(question.criteria) && (
