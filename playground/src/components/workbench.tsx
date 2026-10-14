@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { WorkbenchLocale, useWorkbenchLocale } from "@/components/workbench-locale";
+import { LanguageSwitch, WorkbenchLocale, useWorkbenchLocale } from "@/components/workbench-locale";
 import { displayError, WorkbenchErrorMessage, type DisplayError } from "@/components/workbench-error";
 import type { Locale } from "@/lib/workbench/locale";
 import type { Copy } from "@/lib/workbench/translations";
@@ -30,7 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkbenchQuestionEditor } from "@/components/workbench-question-editor";
 import { WorkbenchResults } from "@/components/workbench-results";
-import { cloneJson, isJsonObject, orderedObject, parseJson, stringifyJson, type JsonObject, type JsonValue } from "@/lib/workbench/json";
+import { cloneJson, isJsonObject, orderedEntries, orderedObject, parseJson, stringifyJson, type JsonObject, type JsonValue } from "@/lib/workbench/json";
 import { isModelId, modelChoice, validateQuestions, type ModelId, type WorkbenchTemplate } from "@/lib/workbench/tasks";
 import type { HistoryRecord } from "@/lib/workbench/storage";
 import type { WorkbenchSnapshot } from "@/lib/workbench/service";
@@ -74,13 +74,19 @@ function templateDraft(template: WorkbenchTemplate) {
   };
 }
 
-function initialQuestions(): JsonObject {
+function initialQuestions(locale: Locale): JsonObject {
+  const chinese = locale === "zh-CN";
   return orderedObject([["request_type", orderedObject([
       ["type", "choice"],
-      ["instructions", "What kind of synthetic request is this?"],
-      ["criteria", orderedObject([["question", "A question or information request"], ["problem", "A problem needing follow-up"]])],
+      ["instructions", chinese ? "这是什么样的合成请求？" : "What kind of synthetic request is this?"],
+      ["criteria", orderedObject([
+        ["question", chinese ? "需要回答的问题" : "A question or information request"],
+        ["problem", chinese ? "需要跟进的问题" : "A problem needing follow-up"],
+      ])],
     ])]]);
 }
+
+const BUILT_IN_TEMPLATE_ID = "template-support-review";
 
 function formatState(record: HistoryRecord): string {
   if (record.stateMode === "text" && typeof record.state === "string") return record.state;
@@ -103,10 +109,12 @@ function WorkbenchContent({ locale, setLocale }: { locale: Locale; setLocale: (l
   const [initialLoadError, setInitialLoadError] = useState<DisplayError | null>(null);
   const [stateMode, setStateMode] = useState<"text" | "json">("text");
   const [stateText, setStateText] = useState("");
-  const [questions, setQuestions] = useState<JsonObject>(initialQuestions);
+  const [questions, setQuestions] = useState<JsonObject>(() => initialQuestions(locale));
   const [templateId, setTemplateId] = useState("");
-  const [taskId, setTaskId] = useState("support-review");
-  const [taskName, setTaskName] = useState("支持请求");
+  const [taskId, setTaskId] = useState("new-task");
+  const [taskName, setTaskName] = useState(locale === "zh-CN" ? "新任务" : "New task");
+  const modelDetailsRef = useRef<HTMLDetailsElement>(null);
+  const modelPanelRef = useRef<HTMLDivElement>(null);
   const [templateDescription, setTemplateDescription] = useState("");
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -155,6 +163,36 @@ function WorkbenchContent({ locale, setLocale }: { locale: Locale; setLocale: (l
     document.documentElement.classList.toggle("dark", snapshot?.settings.theme === "dark");
     document.documentElement.classList.toggle("light", snapshot?.settings.theme !== "dark");
   }, [snapshot?.settings.theme]);
+
+  const shellReady = snapshot !== null;
+  useEffect(() => {
+    if (!shellReady) return;
+    const details = modelDetailsRef.current;
+    if (!details) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape" || !details?.open) return;
+      event.preventDefault();
+      details.open = false;
+      details.querySelector("summary")?.focus();
+    }
+    function onPointer(event: PointerEvent) {
+      if (!details?.open || !(event.target instanceof Node) || details.contains(event.target)) return;
+      details.open = false;
+    }
+    function onResize() { placeModelPanel(); }
+    details.addEventListener("toggle", onResize);
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onResize, true);
+    return () => {
+      details.removeEventListener("toggle", onResize);
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onResize, true);
+    };
+  }, [shellReady]);
 
   const selectedTemplate = snapshot?.templates.find((template) => template.id === templateId) ?? null;
   const runTemplate = snapshot?.templates.find((template) => template.id === runTemplateId) ?? null;
@@ -243,11 +281,34 @@ function WorkbenchContent({ locale, setLocale }: { locale: Locale; setLocale: (l
   function newTemplate() {
     setTemplateId("");
     setTaskId("new-task");
-    setTaskName("New task");
+    setTaskName(locale === "zh-CN" ? "新任务" : "New task");
     setTemplateDescription("");
-    setQuestions(initialQuestions());
+    setQuestions(initialQuestions(locale));
     setEditorError(null);
     setNotice({ copy: "New editable task draft. Save it to keep the template." });
+  }
+
+  function placeModelPanel() {
+    const details = modelDetailsRef.current;
+    const panel = modelPanelRef.current;
+    const summary = details?.querySelector("summary");
+    if (!details || !panel || !summary || !details.open) return;
+    const rect = summary.getBoundingClientRect();
+    const width = Math.min(384, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+    const top = Math.min(rect.bottom + 8, Math.max(8, window.innerHeight - 160));
+    panel.style.right = "auto";
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.width = `${width}px`;
+    panel.style.maxHeight = `${Math.max(160, window.innerHeight - top - 8)}px`;
+  }
+
+  function fillSuppliedExample() {
+    const next = t("The shoes arrived late and the card shows two charges. This is a synthetic example, not a real request.");
+    if (stateText.length > 0 && !window.confirm(t("Replace the current input with the supplied example? This does not change the saved task."))) return;
+    setStateMode("text");
+    setStateText(next);
   }
 
   async function saveCurrentTemplate() {
@@ -452,18 +513,13 @@ function WorkbenchContent({ locale, setLocale }: { locale: Locale; setLocale: (l
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 text-sm"><span>{t("Interface language")}</span>
-              <div role="group" aria-label={t("Interface language")} className="inline-flex rounded-lg border border-input p-0.5">
-                {([['zh-CN', '简体中文'], ['en', 'English']] as const).map(([value, name]) => <Button key={value} type="button" size="sm" variant={locale === value ? "secondary" : "ghost"} aria-pressed={locale === value} disabled={savingLocale} onClick={() => void updateLocale(value)}>{name}</Button>)}
-              </div>
-            </div>
-            {savingLocale && <span role="status" className="text-xs">{t("Saving language…")}</span>}
-            <details className="relative" aria-label={t("Model controls")}>
+            <LanguageSwitch locale={locale} saving={savingLocale} onChange={(value) => void updateLocale(value)} />
+            <details ref={modelDetailsRef} className="relative" aria-label={t("Model controls")} onToggle={() => { placeModelPanel(); requestAnimationFrame(placeModelPanel); }}>
               <summary data-pw="model" className="cursor-pointer rounded-lg border border-border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring">
                 {t("Model")} · {t(snapshot.runtime.state)} · {activeModel ?? t("none resident")}
                 {activeModel && activeModel !== snapshot.settings.selectedModel && <span> · {t("selected")} {snapshot.settings.selectedModel}</span>}
               </summary>
-              <div className="mt-2 flex w-full max-w-sm flex-wrap gap-2 rounded-lg border border-border bg-card p-4">
+              <div ref={modelPanelRef} data-pw="model-panel" className="fixed z-40 flex max-w-sm flex-wrap gap-2 overflow-auto rounded-lg border border-border bg-card p-4 shadow-none" style={{ right: 8, top: 72, width: "min(24rem, calc(100vw - 1rem))", maxHeight: "min(24rem, calc(100dvh - 5rem))" }}>
             <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border px-2.5 py-1.5">
               <span className={`size-2 rounded-full ${snapshot.runtime.state === "ready" ? "bg-ready" : snapshot.runtime.state === "recovery" ? "bg-warning" : "bg-muted-foreground"}`} aria-hidden="true" />
               <label className="sr-only" htmlFor="selected-model">{t("Selected model")}</label>
@@ -507,9 +563,11 @@ function WorkbenchContent({ locale, setLocale }: { locale: Locale; setLocale: (l
           <details className="mt-6 text-sm">
             <summary className="cursor-pointer rounded-lg p-2 focus-visible:ring-2 focus-visible:ring-ring">{t("More tools")}</summary>
             <div className="space-y-3 p-2 text-muted-foreground">
-              <p>{t("Independent tools. A loaded workbench model does not make these ready. Configure their separate Kev API backend (KEV_API).")}</p>
+              <p>{t("Classic Playground edits one System One request and shows a distribution for each question.")}</p>
               <Link href="/classic" className="block underline">{t("Classic Playground")}</Link>
+              <p>{t("Chess turns each legal move into a Choice question and asks the same kind of local model to choose.")}</p>
               <Link href="/chess" className="block underline">{t("Chess")}</Link>
+              <p>{t("Both use a separate compatible local Kev backend (KEV_API, default http://127.0.0.1:8009). A loaded workbench model does not configure them. They are not cloud-only, and this workbench does not claim tested Jev compatibility.")}</p>
             </div>
           </details>
           <p className="mt-6 text-sm leading-6 text-muted-foreground">{t("Probabilities and scores are model outputs, not guarantees of business accuracy.")}</p>
@@ -610,11 +668,7 @@ function WorkbenchContent({ locale, setLocale }: { locale: Locale; setLocale: (l
               {snapshot.templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
             </select>
           </label>
-          {runTask ? <div className="mt-3 text-sm leading-6 text-muted-foreground">
-            <p className="font-medium text-foreground">{restoredDraft ? t("Restored draft · {name}", { name: restoredDraft.taskName }) : runTemplate?.name}</p>
-            <p>{restoredDraft ? t("Snapshot from run {id}. Runs independently, even if the saved template was deleted.", { id: restoredDraft.id }) : runTemplate?.description}</p>
-            <p>{Object.entries(runTask.questions).map(([id, question]) => `${id} (${isJsonObject(question) ? question.type : "unknown"})`).join(" · ")}</p>
-          </div> : <p className="mt-3 text-sm text-muted-foreground">{t("No saved task selected. Create or import a template in Task library.")}</p>}
+          {runTask ? <QuestionGuide questions={runTask.questions} title={restoredDraft ? t("Restored draft · {name}", { name: restoredDraft.taskName }) : runTemplate?.name ?? ""} description={restoredDraft ? t("Snapshot from run {id}. Runs independently, even if the saved template was deleted.", { id: restoredDraft.id }) : runTemplate?.description} /> : <p className="mt-3 text-sm text-muted-foreground">{t("No saved task selected. Create or import a template in Task library.")}</p>}
 
           {snapshot.runtime.state !== "ready" && (
             <div role="status" className={`mt-4 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm leading-6 ${snapshot.runtime.state === "recovery" ? "border-warning bg-warning-surface text-warning" : "border-border"}`}>
@@ -638,7 +692,14 @@ function WorkbenchContent({ locale, setLocale }: { locale: Locale; setLocale: (l
             </div>
             <Textarea id="state-input" aria-label={t("State input")} value={stateText} onChange={(event) => setStateText(event.target.value)} spellCheck={stateMode === "text"} className={`mt-2 min-h-28 resize-y bg-background text-sm leading-6 shadow-none ${stateMode === "json" ? "font-mono" : "font-sans"}`} placeholder={stateMode === "text" ? t("Paste the exact text the model should read. Delimiter-like strings remain literal.") : `{\n  "message": "${t("Paste a JSON object or value")}"\n}`} aria-invalid={!!stateValidationError} />
             {stateMode === "text" && <p className="mt-1 text-sm text-muted-foreground">{t("Text is submitted literally; the workbench does not trim, translate, or rewrite it.")}</p>}
+            <p className="mt-1 text-sm text-muted-foreground">{t("Text is the exact characters submitted. JSON must parse as one JSON value before inference; invalid JSON is rejected and is not treated as question instructions.")}</p>
             {stateValidationError && <div role="alert" className="mt-1 text-sm text-destructive"><WorkbenchErrorMessage error={stateValidationError} /></div>}
+            {!restoredDraft && runTemplate?.id === BUILT_IN_TEMPLATE_ID && (
+              <div className="mt-3 flex flex-col gap-1">
+                <Button type="button" variant="outline" size="sm" className="w-fit" onClick={fillSuppliedExample}>{t("Fill supplied example input")}</Button>
+                <p className="text-sm text-muted-foreground">{t("This sample only matches the supplied support example. It does not change the saved task and does not fit every custom task.")}</p>
+              </div>
+            )}
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
@@ -662,5 +723,55 @@ function WorkbenchContent({ locale, setLocale }: { locale: Locale; setLocale: (l
          <p>{t("History stays in this checkout")}</p>
       </footer>
     </main>
+  );
+}
+
+function criterionText(value: JsonValue | undefined): string {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "";
+  return stringifyJson(value);
+}
+
+function QuestionGuide({ questions, title, description }: { questions: JsonObject; title: string; description?: string }) {
+  const { t } = useWorkbenchLocale();
+  return (
+    <div className="mt-3 text-sm leading-6">
+      <p className="font-medium text-foreground">{title}</p>
+      {description && <p className="text-muted-foreground">{description}</p>}
+      <p className="mt-2">{t("One shared input is sent with every independent question. Questions cannot see each other.")}</p>
+      <p className="text-muted-foreground">{t("Saved names, instructions, criteria, inputs and diagnostics stay in their original language.")}</p>
+      <div className="mt-3 flex flex-col gap-3" aria-label={t("Configured questions")}>
+        {orderedEntries(questions).map(([id, raw]) => {
+          const question = isJsonObject(raw) ? raw : orderedObject([]);
+          const type = typeof question.type === "string" ? question.type : "unknown";
+          const typeLabel = type === "choice" ? t("Choice") : type === "noul" ? t("Noul") : type === "score" ? t("Score") : type;
+          const instructions = criterionText(question.instructions as JsonValue | undefined);
+          return (
+            <article key={id} className="border-t border-border pt-2" aria-label={t("Question {id}", { id })}>
+              <p className="font-mono text-xs text-muted-foreground">{id} · {typeLabel}</p>
+              <p className="break-words">{instructions ? t("Instructions: {text}", { text: instructions }) : t("No instructions saved.")}</p>
+              {type === "choice" && isJsonObject(question.criteria) && (
+                <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+                  <li className="list-none -ml-5 text-foreground">{t("Configured options")}</li>
+                  {orderedEntries(question.criteria).map(([optionId, value]) => <li key={optionId} className="break-words"><span className="font-mono">{optionId}</span>{criterionText(value) ? ` · ${criterionText(value)}` : ""}</li>)}
+                </ul>
+              )}
+              {type === "noul" && isJsonObject(question.criteria) && (
+                <ul className="mt-1 text-muted-foreground">
+                  {typeof question.criteria.true === "string" && <li className="break-words">{t("Yes criterion: {text}", { text: question.criteria.true })}</li>}
+                  {typeof question.criteria.false === "string" && <li className="break-words">{t("No criterion: {text}", { text: question.criteria.false })}</li>}
+                </ul>
+              )}
+              {type === "score" && Array.isArray(question.criteria) && (
+                <ol className="mt-1 list-decimal pl-5 text-muted-foreground" start={0}>
+                  <li className="list-none -ml-5 text-foreground">{t("Ordered levels, from 0")}</li>
+                  {question.criteria.map((level, index) => <li key={index} className="break-words" value={index}>{criterionText(level as JsonValue)}</li>)}
+                </ol>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </div>
   );
 }

@@ -215,7 +215,7 @@ export function WorkbenchQuestionEditor({
             const instructions = jsonField(question.instructions as JsonValue | undefined);
             const structuredInstructions = question.instructions !== undefined && question.instructions !== null && typeof question.instructions !== "string";
             return (
-              <section key={id} className="min-w-0 border-t border-border pt-4" aria-label={t("Question {id}", { id })}>
+              <section key={index} className="min-w-0 border-t border-border pt-4" aria-label={t("Question {id}", { id })}>
                 <div className="flex flex-wrap items-start gap-2">
                   <span className="mt-2 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-xs text-foreground">{String(index + 1).padStart(2, "0")}</span>
                   <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[minmax(0,1fr)_130px]">
@@ -250,7 +250,7 @@ export function WorkbenchQuestionEditor({
                     </div>
                     <div className="flex flex-col gap-3">
                       {orderedEntries(criteria).map(([optionId, description], optionIndex) => (
-                        <div key={optionId} className="grid min-w-0 gap-2">
+                        <div key={optionIndex} className="grid min-w-0 gap-2">
                           <Input aria-label={t("Question {id} option {option} ID", { id, option: optionId })} value={optionId} onChange={(event) => renameOption(id, question, optionId, event.target.value)} className="w-full bg-background font-mono text-sm shadow-none" />
                           <div className="flex min-w-0 gap-2">
                             <Input aria-label={t("Question {id} option {option} description", { id, option: optionId })} value={jsonField(description)} onChange={(event) => changeOptionValue(id, question, optionId, event.target.value)} className="min-w-0 flex-1 bg-background text-sm shadow-none" placeholder={t("Option description (optional)")} />

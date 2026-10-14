@@ -1,21 +1,23 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Playground } from "@/components/playground";
+import { ToolLocale } from "@/components/tool-locale";
+import { readSavedAppearance } from "@/lib/workbench/storage";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Kev · Classic Playground",
-  description: "The existing direct System One Playground.",
-};
+export function generateMetadata(): Metadata {
+  const { locale } = readSavedAppearance();
+  return {
+    title: locale === "zh-CN" ? "Kev · 经典 Playground" : "Kev · Classic Playground",
+    description: locale === "zh-CN" ? "直接编辑 System One 请求的经典 Playground。" : "The existing direct System One Playground.",
+  };
+}
 
 export default function ClassicPage() {
+  const { locale } = readSavedAppearance();
   return (
-    <>
-      <div className="mx-auto w-full max-w-6xl px-6 pt-4 md:px-10">
-        <Link href="/" className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">← Local model workbench</Link>
-      </div>
+    <ToolLocale initialLocale={locale} title={{ "zh-CN": "Kev · 经典 Playground", en: "Kev · Classic Playground" }}>
       <Playground />
-    </>
+    </ToolLocale>
   );
 }

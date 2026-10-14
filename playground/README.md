@@ -25,7 +25,7 @@ After setup, double-click [`../bin/kev-playground.command`](../bin/kev-playgroun
 
 Keep the Terminal window opened by the launcher running. To stop the web app, click **Stop** in the workbench first if the model slot should be released, then press **Ctrl-C** in that Terminal. Closing a browser tab does not stop either the app or model. If the app is stopped while a model remains resident, start it again to recover the owned model status and stop controls. An occupied port, missing Node version, or missing dependencies produces an actionable error; the launcher never adopts or kills an unrelated listener.
 
-The workbench is at `/`. **More tools** links to Classic at `/classic` and Chess at `/chess`. These independent tools require their own Kev API backend (`KEV_API`, default `http://127.0.0.1:8009`); loading a workbench model does not configure them.
+The workbench is at `/`. **More tools** links to Classic at `/classic` and Chess at `/chess`. Classic edits one System One request and shows one distribution per question. Chess turns each legal move into a Choice question. Both use a separate compatible local Kev backend (`KEV_API`, default `http://127.0.0.1:8009`). Loading a workbench model does not configure them. They are not cloud-only tools, and this workbench does not claim tested Jev compatibility. Their request endpoints are unchanged.
 
 ## Precision Workbench
 
@@ -45,24 +45,36 @@ save keeps the previous language and shows an error; select the language again
 to retry. No cookies or browser-profile locale store is used.
 
 Switching translates application headings, controls, help, dialogs, notices,
-accessible labels, lifecycle and failure summaries, results and display units.
+accessible labels, lifecycle and failure summaries, results and display units
+on Run, Task library, History, model controls, More tools, Classic and Chess.
 Dates use the selected locale and the browser's existing time zone; probabilities,
 confidence and expected levels keep three decimals, latency one decimal, token
 counts integers. Raw JSON retains canonical formatting and values. Original
 diagnostics remain inspectable under **诊断详情 / Diagnostic details**; errors
-are classified by stable category, never by translated text.
+are classified by stable category, never by translated text. Language names
+**简体中文** and **English** stay as names.
 
 Language changes preserve unfinished template and Advanced JSON text, input,
-restored drafts, selected task/model/history and displayed results. Language saves
-are separate from run/model exclusion: switching during a run neither resubmits
-nor cancels it, and the eventual result uses the current interface language.
+restored drafts, selected task/model/history, displayed results, Classic request
+text and an in-progress Chess game. Language saves are separate from run/model
+exclusion: switching during a run neither resubmits nor cancels it, and the
+eventual result uses the current interface language. Chess inference requests
+keep their existing English criteria; only the page chrome is localized.
 
-Task names/descriptions, generated examples, question/option IDs and contents,
-inputs, model IDs, saved snapshots, score legends and canonical responses are
-**data, not translations**. Classic and Chess remain independent pages; only
-their workbench entries/help are translated. Browser/OS dialog chrome is outside
-application copy. No translation service or extra network translation request,
-model-quality change, inference prompt translation or new language is introduced.
+Task names/descriptions, question/option IDs and contents, inputs, model IDs,
+saved snapshots, score legends, canonical responses and already saved templates
+are **data, not translations**. A newly created draft follows the selected
+language. The supplied support example can fill the Run input in the selected
+language; it does not rewrite a saved template, and it is not a generic example
+for custom tasks. Browser/OS dialog chrome is outside application copy. No
+translation service or extra network translation request, model-quality change,
+inference prompt translation or new language is introduced.
+
+Run explains that one input is shared by independent questions, shows the saved
+instructions and criteria, and distinguishes literal Text from parsed JSON.
+Results explain a Noul yes probability, a Score expected level on its ordered
+range, and confidence as model-reported confidence rather than guaranteed
+accuracy. A yes/no is tied to that question's saved instructions or criterion.
 
 ## Templates and workflow
 
@@ -72,7 +84,7 @@ model-quality change, inference prompt translation or new language is introduced
 - Import/export uses `kev-project-tasks/1`; a valid import replaces the entire saved library (no merge) after full validation. Invalid imports leave it unchanged. History is kept. Export chooses one registered logical model and writes under `.local/playground/workbench/exports/`, not the OS Downloads folder.
 - **History** lists task, timestamp, outcome and actual model. Inspect, restore to a draft without submitting, rerun with the currently selected ready model, or delete individually. Restored drafts are identified on Run and can run even after their original template is deleted; they never overwrite saved templates. Each submission freezes its state/questions and actual model identity. Persistence errors are not reported as saved success.
 - Workbench settings, templates, history, consumer session data, runtime caches, logs, temporary data, and exports stay under the checkout's ignored `.local/playground/`. Generic exclusive model-slot ownership metadata stays under `.local/consumer-runtime/`. The workbench does not store history/templates in cookies, localStorage, or application IndexedDB.
-- The compact global **Model** summary shows readiness and the actual resident model, including a different future selection. Expand it for selection, load/switch/stop and lifecycle guidance. Closing the tab or changing views does not release or duplicate a model. Use explicit Stop to release the workbench-owned slot; switching requires confirmed release first. A busy slot owned by another project is not adopted or stopped.
+- The compact global **Model** summary shows readiness and the actual resident model, including a different future selection. Open it for an anchored overlay with selection, load/switch/stop and lifecycle guidance. The overlay does not change header height or move the page content. Escape or a click outside closes it and returns keyboard focus to the summary. Closing the tab or changing views does not release or duplicate a model. Use explicit Stop to release the workbench-owned slot; switching requires confirmed release first. A busy slot owned by another project is not adopted or stopped.
 - The logical model selected for a run is not the model's identity. Result and history details report the actual resident checkpoint/base and runtime, not an echoed API alias.
 
 Scores and probabilities retain System One meanings; they are not explanations, calibrated business-accuracy guarantees, or permission to automate high-impact decisions. This workbench is local-only and does not add document ingestion, batch processing, fine-tuning, or cloud deployment.
@@ -110,12 +122,17 @@ hold and replay the actual local server response unchanged.
 | History outcomes/actions, provenance, raw/details and all three result types | LANG-COVERAGE, LANG-ERRORS, LANG-INTEGRITY; core history/outcome assertions |
 | Invalid input/import, unready/busy/startup/stop/length/inference/storage failures | LANG-ERRORS; identical categories/statuses and original diagnostics in both languages |
 | Timestamps, precision/units, themes/sizes, keyboard and document language | LANG-FORMAT; fixed fixtures, accessibility snapshots and browser error observation |
+| Model overlay geometry, Escape/outside close, focus return | `workbench.qa.spec.ts` measured header/content geometry and interaction captures |
+| Run question guidance, Text/JSON, example fill, result meanings | `workbench.qa.spec.ts` single/mixed synthetic tasks and bilingual captures |
+| Question ID, option ID/description and score-level caret | `workbench.qa.spec.ts` browser typing, paste and saved-value assertions |
+| Classic and Chess application chrome, separate backend guidance, synthetic failure/success | `workbench.qa.spec.ts`; existing synthetic `/v1` fixtures remain labeled synthetic |
 
 `src/lib/workbench/translations.ts` is the finite application-copy dictionary;
 `locale.ts` owns locale validation/defaults and display formatting. Raw IDs,
-payloads, diagnostics and browser-owned file-picker chrome are intentionally
-outside this inventory. Unexpected categories get a localized summary with
-inspectable original detail instead of guessing from a translated sentence.
+payloads, diagnostics, saved task text and browser-owned file-picker chrome are
+intentionally outside this inventory. The language names 简体中文 and English
+stay unchanged. Unexpected categories get a localized summary with inspectable
+original detail instead of guessing from a translated sentence.
 
 The native browser harness still uses the pre-redesign combined-view selectors. Its navigation adaptation and authorized native rerun are deferred; the redesign's verification uses only the deterministic entry point above, not a native quality or performance claim.
 
