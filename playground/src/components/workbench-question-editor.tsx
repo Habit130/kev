@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cloneJson, deleteOrdered, isJsonObject, orderedEntries, orderedObject, parseJson, setOrdered, stringifyJson, type JsonObject, type JsonValue } from "@/lib/workbench/json";
 import { validateQuestions } from "@/lib/workbench/tasks";
+import type { Copy } from "@/lib/workbench/translations";
 
 type Props = {
   questions: JsonObject;
@@ -37,10 +38,12 @@ function nextId(existing: string[], prefix: string): string {
   return `${prefix}_${suffix}`;
 }
 
-function defaultQuestion(type: string): JsonObject {
+type Translate = (copy: Copy, values: Record<string, string | number>) => string;
+
+function defaultQuestion(type: string, t: Translate): JsonObject {
   if (type === "noul") return orderedObject([["type", "noul"], ["instructions", ""]]);
-  if (type === "score") return orderedObject([["type", "score"], ["instructions", ""], ["criteria", ["Level 1", "Level 2"]]]);
-  return orderedObject([["type", "choice"], ["instructions", ""], ["criteria", orderedObject([["option_a", "Option A"], ["option_b", "Option B"]])]]);
+  if (type === "score") return orderedObject([["type", "score"], ["instructions", ""], ["criteria", [t("Level {level}", { level: 1 }), t("Level {level}", { level: 2 })]]]);
+  return orderedObject([["type", "choice"], ["instructions", ""], ["criteria", orderedObject([["option_a", t("Option {letter}", { letter: "A" })], ["option_b", t("Option {letter}", { letter: "B" })]])]]);
 }
 
 export function WorkbenchQuestionEditor({
@@ -85,13 +88,13 @@ export function WorkbenchQuestionEditor({
 
   function addQuestion() {
     const id = nextId(entries.map(([key]) => key), "question");
-    onChange(setOrdered(questions, id, defaultQuestion("choice")));
+    onChange(setOrdered(questions, id, defaultQuestion("choice", t)));
     showEditorError(null);
   }
 
   function changeType(id: string, type: string) {
     const question = cloneJson(questions[id] as JsonObject);
-    const next = defaultQuestion(type);
+    const next = defaultQuestion(type, t);
     if ("instructions" in question) next.instructions = question.instructions;
     replaceQuestion(id, next);
   }
@@ -128,7 +131,7 @@ export function WorkbenchQuestionEditor({
 
   function addScoreLevel(questionId: string, question: JsonObject) {
     const levels = Array.isArray(question.criteria) ? question.criteria : [];
-    replaceQuestion(questionId, setOrdered(question, "criteria", [...levels, `Level ${levels.length + 1}`]));
+    replaceQuestion(questionId, setOrdered(question, "criteria", [...levels, t("Level {level}", { level: levels.length + 1 })]));
   }
 
   function moveScoreLevel(questionId: string, question: JsonObject, index: number, direction: -1 | 1) {

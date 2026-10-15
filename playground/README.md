@@ -118,6 +118,7 @@ hold and replay the actual local server response unchanged.
 | Model readiness, selection, load/switch/stop, confirmation and recovery help | Core lifecycle regressions; LANG-ERRORS and model controls in both languages |
 | Saved task, shared input, literal-text help, run/restored draft and notices | LANG-STATE; retained core saved-versus-unsaved and restore scenarios |
 | Visual Choice/Noul/Score editor, dynamic accessible labels, Advanced JSON, validation | LANG-COVERAGE and LANG-ERRORS; bilingual library/import/questions captures |
+| Generated Choice descriptions and Score levels (Add question, type change, Add level) | `workbench.qa.spec.ts` bilingual action-time assertions with preserved draft and saved bytes |
 | Import replacement help, export/save feedback and delete dialogs | LANG-COVERAGE; bilingual success captures and recorded dialog messages |
 | History outcomes/actions, provenance, raw/details and all three result types | LANG-COVERAGE, LANG-ERRORS, LANG-INTEGRITY; core history/outcome assertions |
 | Invalid input/import, unready/busy/startup/stop/length/inference/storage failures | LANG-ERRORS; identical categories/statuses and original diagnostics in both languages |
