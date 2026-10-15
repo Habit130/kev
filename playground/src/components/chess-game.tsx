@@ -5,7 +5,7 @@ import { Chess, type Square } from "chess.js";
 import Link from "next/link";
 import { useWorkbenchLocale } from "@/components/workbench-locale";
 import type { Copy } from "@/lib/workbench/translations";
-import { askModel, legalMove, loadGames, replay, saveGames, resultText, type Mode, type ModelMove, type SavedGame } from "@/lib/chess";
+import { askModel, formatResult, legalMove, loadGames, replay, saveGames, resultText, type Mode, type ModelMove, type SavedGame } from "@/lib/chess";
 import { api } from "@/lib/kev";
 import { ChessBoard } from "@/components/chess-board";
 import { Button } from "@/components/ui/button";
@@ -186,7 +186,10 @@ export function ChessGame() {
     persist({ ...game, moves, pgn: c.pgn(), result: undefined });
   }
 
-  const finished = games.filter((g) => g.result);
+  const finished = games.filter((g): g is SavedGame & { result: string } => !!g.result);
+  // Finished outcomes are canonical English strings (`score (reason)`); only the known reason
+  // is localized at display time. Unknown or imported strings render verbatim, unchanged.
+  const resultLabel = (result: string) => formatResult(result, (reason) => t(reason));
   const movesRef = useRef<HTMLOListElement>(null);
   useEffect(() => { movesRef.current?.scrollTo({ top: movesRef.current.scrollHeight }); }, [game?.moves.length]);
 
@@ -238,7 +241,7 @@ export function ChessGame() {
           </div>
 
           <p className="min-h-5 text-sm text-muted-foreground" role="status">
-            {game?.result ? <span className="text-foreground">{game.result}</span>
+            {game?.result ? <span className="text-foreground">{resultLabel(game.result)}</span>
               : thinking ? t("Model is choosing")
               : humanToMove ? t("Your move ({side}). Click a piece, then a square.", { side: t(humanSide === "w" ? "White" : "Black") })
               : t("{side} to move", { side: t(chess.turn() === "w" ? "White" : "Black") })}
@@ -286,7 +289,7 @@ export function ChessGame() {
             {[...finished].reverse().slice(0, 8).map((g) => (
               <li key={g.id} className="flex items-baseline justify-between gap-3 py-0.5">
                 <span className="text-muted-foreground">{new Date(g.startedAt).toLocaleString(locale)} · {t(MODES.find((m) => m.value === g.mode)?.label ?? "Model vs model")}</span>
-                <span className="tabular-nums">{t("{count} plies", { count: number(g.moves.length) })} · {g.result}</span>
+                <span className="tabular-nums">{t("{count} plies", { count: number(g.moves.length) })} · {resultLabel(g.result)}</span>
               </li>
             ))}
           </ul>

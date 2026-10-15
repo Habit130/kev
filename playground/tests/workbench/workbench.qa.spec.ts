@@ -1,9 +1,11 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { Chess } from "chess.js";
 import type { WorkbenchSnapshot } from "../../src/lib/workbench/service";
 import { chinese, type Copy } from "../../src/lib/workbench/translations";
 import type { Locale } from "../../src/lib/workbench/locale";
+import { EVAL_LEVELS, formatResult, parseResult, RESULT_REASONS, resultText, type ResultReason } from "../../src/lib/chess";
 
 const data = process.env.KEV_WORKBENCH_DATA_ROOT!;
 const evidence = process.env.KEV_WORKBENCH_EVIDENCE_ROOT!;
@@ -90,6 +92,70 @@ function builtInApp(locale: Locale) {
       },
     ],
   };
+}
+
+// chess.js-validated legal lines used by the live terminal-state tests below.
+const MATE_WHITE_LINE = ["e4", "f6", "d4", "g5", "Qh5#"];
+const MATE_BLACK_LINE = ["f3", "e5", "g4", "Qh4#"];
+const STALEMATE_LINE = ["e3", "a5", "Qh5", "Ra6", "Qxa5", "h5", "Qxc7", "Rah6", "h4", "f6", "Qxd7+", "Kf7", "Qxb7", "Qd3", "Qxb8", "Qh7", "Qxc8", "Kg6", "Qe6"];
+const REPETITION_LINE = ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8"];
+
+type ChessRequestBody = {
+  state: { fen: string; in_check: boolean };
+  questions: { move: { criteria: Record<string, string> }; evaluation: { criteria: string[] } };
+};
+type ChessFixture = { calls: string[]; bodies: ChessRequestBody[] };
+
+function playLine(sans: string[]): Chess {
+  const chess = new Chess();
+  for (const san of sans) chess.move(san);
+  return chess;
+}
+
+// Answers the page's own /kev/v1 model path with the next scripted legal SAN (labeled synthetic,
+// no live inference). A request outside the scripted line fails the route so drift is visible.
+async function routeChessModel(page: Page, lines: string[][], log: ChessFixture) {
+  let game = 0;
+  let ply = 0;
+  await page.route("**/kev/v1/**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    log.calls.push(`${request.method()} ${pathname}`);
+    if (pathname.endsWith("/v1/models")) {
+      await route.fulfill({ json: { models: [{ name: "synthetic-chess", run: "synthetic-chess-fixture", base: "synthetic-chess-base" }] } });
+      return;
+    }
+    const body = request.postDataJSON() as ChessRequestBody;
+    const expected = lines[game]?.[ply];
+    const criteria = body.questions?.move?.criteria ?? {};
+    if (!expected || !(expected in criteria)) {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: `unexpected chess request for ply ${ply}` }) });
+      return;
+    }
+    log.bodies.push(body);
+    const keys = Object.keys(criteria);
+    const levels = body.questions.evaluation.criteria;
+    await route.fulfill({
+      json: {
+        model: "synthetic-chess-fixture",
+        answers: {
+          move: { type: "choice", choice: expected, confidence: 0.5, probabilities: Object.fromEntries(keys.map((key) => [key, key === expected ? 0.5 : 0.5 / Math.max(keys.length - 1, 1)])) },
+          evaluation: { type: "score", score: 2, confidence: 0.5, legend: Object.fromEntries(levels.map((level, index) => [String(index), level])), probabilities: Object.fromEntries(levels.map((_, index) => [String(index), 1 / levels.length])) },
+        },
+        usage: { input_tokens: 9, output_tokens: 3 },
+        latency_ms: 4,
+      },
+    });
+    ply += 1;
+    if (ply >= (lines[game]?.length ?? 0)) { game += 1; ply = 0; }
+  });
+}
+
+// One Step click with its synthetic model reply completed.
+async function stepChess(page: Page, name: string) {
+  const response = page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname.endsWith("/v1/systemone"));
+  await page.getByRole("button", { name, exact: true }).click();
+  expect((await response).status()).toBe(200);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -449,4 +515,147 @@ test("LANGUAGE defaults: generated choice descriptions and score levels follow t
     draftUnchangedWhileEditing: true,
     templatesStableAcrossSwitches: true,
   }, null, 2));
+});
+
+test("LANGUAGE chess terminal inventory: display maps every known reason and preserves unknown strings", () => {
+  const played = {
+    "1-0 (checkmate)": playLine(MATE_WHITE_LINE),
+    "0-1 (checkmate)": playLine(MATE_BLACK_LINE),
+    "½-½ (stalemate)": playLine(STALEMATE_LINE),
+    "½-½ (repetition)": playLine(REPETITION_LINE),
+  };
+  expect([...Object.values(played)].map((chess) => [chess.isGameOver(), chess.isCheckmate(), chess.isStalemate(), chess.isThreefoldRepetition()])).toEqual([
+    [true, true, false, false],
+    [true, true, false, false],
+    [true, false, true, false],
+    [true, false, false, true],
+  ]);
+  const inventory = [
+    { provenance: "live play to checkmate, white mates", result: resultText(played["1-0 (checkmate)"])!, zh: "1-0 (将死)" },
+    { provenance: "live play to checkmate, black mates", result: resultText(played["0-1 (checkmate)"])!, zh: "0-1 (将死)" },
+    { provenance: "live play to stalemate", result: resultText(played["½-½ (stalemate)"])!, zh: "½-½ (逼和)" },
+    { provenance: "live play to threefold repetition", result: resultText(played["½-½ (repetition)"])!, zh: "½-½ (三次重复局面)" },
+    { provenance: "kings-only position (chess.js FEN)", result: resultText(new Chess("8/8/8/4k3/8/8/4K3/8 w - - 0 1"))!, zh: "½-½ (子力不足)" },
+    { provenance: "halfmove clock at 100 (chess.js FEN)", result: resultText(new Chess("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 100 50"))!, zh: "½-½ (五十回合规则)" },
+    { provenance: "defensive fallback kept for stored/imported strings; not reachable through chess.js 1.4.0 predicates", result: "½-½ (draw)", zh: "½-½ (和棋)" },
+  ];
+  expect(inventory.map((row) => row.result)).toEqual([
+    "1-0 (checkmate)", "0-1 (checkmate)", "½-½ (stalemate)", "½-½ (repetition)", "½-½ (insufficient material)", "½-½ (fifty-move rule)", "½-½ (draw)",
+  ]);
+  expect(RESULT_REASONS).toHaveLength(6);
+  const zhReason = (reason: ResultReason) => chinese[reason];
+  for (const reason of RESULT_REASONS) expect(typeof chinese[reason]).toBe("string");
+  for (const row of inventory) {
+    expect(parseResult(row.result)).not.toBeNull();
+    expect(formatResult(row.result, zhReason)).toBe(row.zh);
+    expect(formatResult(row.result, (reason) => reason)).toBe(row.result); // English mode stays English
+  }
+  const unknown = ["1/2-1/2 (imported result)", "½-½", "1-0 (checkmate", "½-½ (stalemate) extra", ""];
+  for (const result of unknown) {
+    expect(parseResult(result)).toBeNull();
+    expect(formatResult(result, zhReason)).toBe(result);
+  }
+  writeFileSync(path.join(evidence, "qa-chess-terminal-inventory.json"), JSON.stringify({ inventory, unknownFallbacks: unknown }, null, 2));
+});
+
+test("LANGUAGE chess: a live stalemate localizes status and saved row without rewriting stored bytes", async ({ page }) => {
+  const expected = "½-½ (stalemate)";
+  expect(resultText(playLine(STALEMATE_LINE))).toBe(expected);
+  const log: ChessFixture = { calls: [], bodies: [] };
+  await routeChessModel(page, [STALEMATE_LINE], log);
+  await page.goto("/chess");
+  await page.getByRole("button", { name: "简体中文", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  const status = page.locator("p[role='status']");
+  const savedRow = page.locator("ul li").filter({ hasText: "½-½" }).first();
+  for (let ply = 0; ply < STALEMATE_LINE.length; ply += 1) await stepChess(page, "单步");
+  await expect(status).toHaveText("½-½ (逼和)");
+
+  // The request bytes are unchanged: canonical English criteria, the real position, no localization.
+  expect(log.bodies).toHaveLength(STALEMATE_LINE.length);
+  const position = new Chess();
+  log.bodies.forEach((body, index) => {
+    expect(body.state.fen).toBe(position.fen());
+    expect(body.questions.evaluation.criteria).toEqual(EVAL_LEVELS);
+    expect(Object.keys(body.questions.move.criteria).sort()).toEqual(position.moves().sort());
+    position.move(STALEMATE_LINE[index]);
+  });
+
+  // Stored bytes keep the canonical English result, the moves and the PGN.
+  const storedBytes = await page.evaluate(() => localStorage.getItem("kev.chess.v1"));
+  const stored = JSON.parse(storedBytes!) as { result: string; moves: unknown[]; pgn: string }[];
+  expect(stored).toHaveLength(1);
+  expect(stored[0].result).toBe(expected);
+  expect(stored[0].moves).toHaveLength(STALEMATE_LINE.length);
+  expect(stored[0].pgn).toBe(playLine(STALEMATE_LINE).pgn());
+  await page.screenshot({ path: path.join(evidence, "qa-chess-live-stalemate-zh.png"), fullPage: true });
+
+  // Switching language re-renders both edges; it makes no inference request and rewrites nothing.
+  const systemOneRequests = () => log.calls.filter((call) => call.endsWith("/v1/systemone")).length;
+  const before = systemOneRequests();
+  await switchLanguage(page, "en");
+  await expect(status).toHaveText(expected);
+  await expect(savedRow).toContainText(`19 plies · ${expected}`);
+  await page.screenshot({ path: path.join(evidence, "qa-chess-live-stalemate-en.png"), fullPage: true });
+  await switchLanguage(page, "zh-CN");
+  await expect(status).toHaveText("½-½ (逼和)");
+  await expect(savedRow).toContainText("19 步 · ½-½ (逼和)");
+  expect(systemOneRequests()).toBe(before);
+  expect(await page.evaluate(() => localStorage.getItem("kev.chess.v1"))).toBe(storedBytes);
+});
+
+test("LANGUAGE chess: live checkmate winner forms and threefold repetition localize both score strings", async ({ page }) => {
+  const lines = [MATE_WHITE_LINE, MATE_BLACK_LINE, REPETITION_LINE];
+  const expected = ["1-0 (checkmate)", "0-1 (checkmate)", "½-½ (repetition)"];
+  const localized = ["1-0 (将死)", "0-1 (将死)", "½-½ (三次重复局面)"];
+  expect(lines.map((line) => resultText(playLine(line)))).toEqual(expected);
+  const log: ChessFixture = { calls: [], bodies: [] };
+  await routeChessModel(page, lines, log);
+  await page.goto("/chess");
+  await page.getByRole("button", { name: "简体中文", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  const status = page.locator("p[role='status']");
+  for (let game = 0; game < lines.length; game += 1) {
+    if (game > 0) await page.getByRole("button", { name: "新对局", exact: true }).click();
+    for (let ply = 0; ply < lines[game].length; ply += 1) await stepChess(page, "单步");
+    await expect(status).toHaveText(localized[game]);
+  }
+  const stored = JSON.parse((await page.evaluate(() => localStorage.getItem("kev.chess.v1")))!) as { result: string }[];
+  expect(stored.map((game) => game.result)).toEqual(expected);
+  await page.screenshot({ path: path.join(evidence, "qa-chess-live-outcomes-zh.png"), fullPage: true });
+});
+
+test("LANGUAGE chess: saved historical rows localize known reasons and keep imported strings verbatim", async ({ page }) => {
+  const finished = playLine(STALEMATE_LINE);
+  const known = resultText(finished)!;
+  const historical = { id: "historical-1", startedAt: 1750000000000, mode: "self", pgn: finished.pgn(), moves: STALEMATE_LINE.map((san) => ({ san, by: "model" })), result: known };
+  const imported = { ...historical, id: "imported-1", result: "1/2-1/2 (imported summary)" };
+  const calls: string[] = [];
+  await page.route("**/kev/v1/**", async (route) => {
+    calls.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    await route.fulfill({ json: { models: [{ name: "synthetic-chess", run: "synthetic-chess-fixture", base: "synthetic-chess-base" }] } });
+  });
+
+  await page.goto("/");
+  await page.evaluate((games) => localStorage.setItem("kev.chess.v1", JSON.stringify(games)), [historical, imported]);
+  const storedBytes = await page.evaluate(() => localStorage.getItem("kev.chess.v1"));
+  await page.goto("/chess");
+  await page.getByRole("button", { name: "简体中文", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  const knownRow = page.locator("ul li").filter({ hasText: "½-½" });
+  const importedRow = page.locator("ul li").filter({ hasText: "imported summary" });
+  await expect(knownRow).toHaveCount(1);
+  await expect(importedRow).toHaveCount(1);
+  await expect(knownRow).toContainText("19 步 · ½-½ (逼和)");
+  await expect(importedRow).toContainText("1/2-1/2 (imported summary)");
+  await page.screenshot({ path: path.join(evidence, "qa-chess-stored-history-zh.png"), fullPage: true });
+
+  await switchLanguage(page, "en");
+  await expect(knownRow).toContainText(`19 plies · ${known}`);
+  await expect(importedRow).toContainText("1/2-1/2 (imported summary)");
+  await switchLanguage(page, "zh-CN");
+  await expect(knownRow).toContainText("½-½ (逼和)");
+  expect(await page.evaluate(() => localStorage.getItem("kev.chess.v1"))).toBe(storedBytes);
+  expect(calls.some((call) => call.endsWith("/v1/systemone"))).toBe(false);
+  await page.screenshot({ path: path.join(evidence, "qa-chess-stored-history-zh-after-switch.png"), fullPage: true });
 });

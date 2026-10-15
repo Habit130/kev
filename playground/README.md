@@ -59,7 +59,10 @@ restored drafts, selected task/model/history, displayed results, Classic request
 text and an in-progress Chess game. Language saves are separate from run/model
 exclusion: switching during a run neither resubmits nor cancels it, and the
 eventual result uses the current interface language. Chess inference requests
-keep their existing English criteria; only the page chrome is localized.
+keep their existing English criteria; only the page chrome is localized. Finished
+Chess outcomes are localized only when rendered — the canonical English result
+string stored with a game is never rewritten, and unknown imported strings display
+unchanged.
 
 Task names/descriptions, question/option IDs and contents, inputs, model IDs,
 saved snapshots, score legends, canonical responses and already saved templates
@@ -84,7 +87,7 @@ accuracy. A yes/no is tied to that question's saved instructions or criterion.
 - Import/export uses `kev-project-tasks/1`; a valid import replaces the entire saved library (no merge) after full validation. Invalid imports leave it unchanged. History is kept. Export chooses one registered logical model and writes under `.local/playground/workbench/exports/`, not the OS Downloads folder.
 - **History** lists task, timestamp, outcome and actual model. Inspect, restore to a draft without submitting, rerun with the currently selected ready model, or delete individually. Restored drafts are identified on Run and can run even after their original template is deleted; they never overwrite saved templates. Each submission freezes its state/questions and actual model identity. Persistence errors are not reported as saved success.
 - Workbench settings, templates, history, consumer session data, runtime caches, logs, temporary data, and exports stay under the checkout's ignored `.local/playground/`. Generic exclusive model-slot ownership metadata stays under `.local/consumer-runtime/`. The workbench does not store history/templates in cookies, localStorage, or application IndexedDB.
-- The compact global **Model** summary shows readiness and the actual resident model, including a different future selection. Open it for an anchored overlay with selection, load/switch/stop and lifecycle guidance. The overlay does not change header height or move the page content. Escape or a click outside closes it and returns keyboard focus to the summary. Closing the tab or changing views does not release or duplicate a model. Use explicit Stop to release the workbench-owned slot; switching requires confirmed release first. A busy slot owned by another project is not adopted or stopped.
+- The compact global **Model** summary shows readiness and the actual resident model, including a different future selection. Open it for an anchored overlay with selection, load/switch/stop and lifecycle guidance. The overlay does not change header height or move the page content. Escape closes it and returns keyboard focus to the summary; a click outside closes it while focus follows the click. Closing the tab or changing views does not release or duplicate a model. Use explicit Stop to release the workbench-owned slot; switching requires confirmed release first. A busy slot owned by another project is not adopted or stopped.
 - The logical model selected for a run is not the model's identity. Result and history details report the actual resident checkpoint/base and runtime, not an echoed API alias.
 
 Scores and probabilities retain System One meanings; they are not explanations, calibrated business-accuracy guarantees, or permission to automate high-impact decisions. This workbench is local-only and does not add document ingestion, batch processing, fine-tuning, or cloud deployment.
@@ -127,6 +130,7 @@ hold and replay the actual local server response unchanged.
 | Run question guidance, Text/JSON, example fill, result meanings | `workbench.qa.spec.ts` single/mixed synthetic tasks and bilingual captures |
 | Question ID, option ID/description and score-level caret | `workbench.qa.spec.ts` browser typing, paste and saved-value assertions |
 | Classic and Chess application chrome, separate backend guidance, synthetic failure/success | `workbench.qa.spec.ts`; existing synthetic `/v1` fixtures remain labeled synthetic |
+| Chess terminal outcomes (live status and saved rows) and language-switch persistence | `workbench.qa.spec.ts` chess.js-validated live stalemate/checkmate/repetition transitions, stored-row inventory and byte-preservation assertions |
 
 `src/lib/workbench/translations.ts` is the finite application-copy dictionary;
 `locale.ts` owns locale validation/defaults and display formatting. Raw IDs,
