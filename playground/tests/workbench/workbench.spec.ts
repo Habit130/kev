@@ -76,6 +76,11 @@ async function apiPost(page: Page, body: unknown, pathname = "/api/workbench"): 
   return requestFromPage(page, pathname, "POST", body);
 }
 
+async function openModelControls(page: Page): Promise<void> {
+  const summary = page.locator("details[aria-label='Model controls'] > summary");
+  if (!(await summary.evaluate((element) => element.parentElement!.hasAttribute("open")))) await summary.click();
+}
+
 async function configureRuntime(page: Page, controls: Record<string, unknown>): Promise<void> {
   const reply = await apiPost(page, { action: "configure", ...controls }, "/api/workbench/test");
   expect(reply.status).toBe(200);
@@ -158,6 +163,7 @@ test("hydrates responsively with accessible empty, light, and dark states", asyn
   await expect(page.locator("html")).toHaveClass(/light/);
   await page.screenshot({ path: path.join(EVIDENCE_ROOT, "deterministic-empty-1024x768-light.png") });
 
+  await page.locator("details[aria-label='Model controls'] > summary").click();
   const getButton = page.getByRole("button", { name: "Load model" });
   await getButton.focus();
   await page.keyboard.press("Enter");
@@ -229,6 +235,7 @@ test("edits a typed task, freezes submitted input, persists history, and restore
   const savedTemplate = (await apiGet(page)).templates as Record<string, unknown>[];
   expect((savedTemplate[0].questions as Record<string, { criteria?: unknown }>).question_4.criteria).toEqual({ true: "An optional first criterion." });
 
+  await openModelControls(page);
   const loadButton = page.getByRole("button", { name: "Load model" });
   await loadButton.focus();
   await page.keyboard.press("Enter");
@@ -254,6 +261,7 @@ test("edits a typed task, freezes submitted input, persists history, and restore
   await page.getByRole("button", { name: "Task library", exact: true }).click();
   await page.getByLabel("Question category instructions").fill("Later editor text must not change this run.");
   await page.getByRole("button", { name: "Run", exact: true }).click();
+  await openModelControls(page);
   await expect(page.getByRole("button", { name: "Stop" })).toBeDisabled();
   await expect(page.getByLabel("Selected model")).toBeDisabled();
 
@@ -492,6 +500,7 @@ test("reports load, inference, persistence, and close failures without inventing
 
   await configureRuntime(page, { closeFailure: true });
   await page.once("dialog", (dialog) => dialog.accept());
+  await openModelControls(page);
   await page.getByRole("button", { name: "Stop" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "could not confirm model shutdown" })).toBeVisible();
   expect((await apiGet(page)).runtime).toEqual(expect.objectContaining({ state: "ready" }));

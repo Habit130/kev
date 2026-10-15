@@ -141,6 +141,7 @@ test("LANG-STATE: preserve unsaved visual/JSON/input/history drafts and run excl
   await expect(page.getByRole("button", { name: "运行中…", exact: true })).toBeDisabled();
   await switchLanguage(page, "en");
   await expect(page.getByRole("button", { name: "Running…", exact: true })).toBeDisabled();
+  await modelControls(page, "en");
   await expect(page.getByLabel("Selected model", { exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeDisabled();
   await expect.poll(async () => (await snapshot(page)).history[0]?.status).toBe("succeeded");
@@ -269,6 +270,7 @@ test("LANG-ERRORS: actual-server validation, lifecycle, length, inference and pe
     await capture(page, `persistence-${locale}`);
     await controls(page, { historyWriteFailure: false, closeFailure: true });
     page.once("dialog", (dialog) => dialog.accept());
+    await modelControls(page, locale);
     await page.getByRole("button", { name: label(locale, "Stop"), exact: true }).click();
     await expect(page.locator("main [role='alert']").first()).toContainText(label(locale, "Model shutdown is not confirmed. Retry Stop; the slot is not considered free."));
     expect((await snapshot(page)).runtime.state).toBe("ready");

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cloneJson, deleteOrdered, isJsonObject, orderedEntries, orderedObject, parseJson, setOrdered, stringifyJson, type JsonObject, type JsonValue } from "@/lib/workbench/json";
 import { validateQuestions } from "@/lib/workbench/tasks";
+import type { Copy } from "@/lib/workbench/translations";
 
 type Props = {
   questions: JsonObject;
@@ -37,10 +38,12 @@ function nextId(existing: string[], prefix: string): string {
   return `${prefix}_${suffix}`;
 }
 
-function defaultQuestion(type: string): JsonObject {
+type Translate = (copy: Copy, values: Record<string, string | number>) => string;
+
+function defaultQuestion(type: string, t: Translate): JsonObject {
   if (type === "noul") return orderedObject([["type", "noul"], ["instructions", ""]]);
-  if (type === "score") return orderedObject([["type", "score"], ["instructions", ""], ["criteria", ["Level 1", "Level 2"]]]);
-  return orderedObject([["type", "choice"], ["instructions", ""], ["criteria", orderedObject([["option_a", "Option A"], ["option_b", "Option B"]])]]);
+  if (type === "score") return orderedObject([["type", "score"], ["instructions", ""], ["criteria", [t("Level {level}", { level: 1 }), t("Level {level}", { level: 2 })]]]);
+  return orderedObject([["type", "choice"], ["instructions", ""], ["criteria", orderedObject([["option_a", t("Option {letter}", { letter: "A" })], ["option_b", t("Option {letter}", { letter: "B" })]])]]);
 }
 
 export function WorkbenchQuestionEditor({
@@ -85,13 +88,13 @@ export function WorkbenchQuestionEditor({
 
   function addQuestion() {
     const id = nextId(entries.map(([key]) => key), "question");
-    onChange(setOrdered(questions, id, defaultQuestion("choice")));
+    onChange(setOrdered(questions, id, defaultQuestion("choice", t)));
     showEditorError(null);
   }
 
   function changeType(id: string, type: string) {
     const question = cloneJson(questions[id] as JsonObject);
-    const next = defaultQuestion(type);
+    const next = defaultQuestion(type, t);
     if ("instructions" in question) next.instructions = question.instructions;
     replaceQuestion(id, next);
   }
@@ -128,7 +131,7 @@ export function WorkbenchQuestionEditor({
 
   function addScoreLevel(questionId: string, question: JsonObject) {
     const levels = Array.isArray(question.criteria) ? question.criteria : [];
-    replaceQuestion(questionId, setOrdered(question, "criteria", [...levels, `Level ${levels.length + 1}`]));
+    replaceQuestion(questionId, setOrdered(question, "criteria", [...levels, t("Level {level}", { level: levels.length + 1 })]));
   }
 
   function moveScoreLevel(questionId: string, question: JsonObject, index: number, direction: -1 | 1) {
@@ -215,7 +218,7 @@ export function WorkbenchQuestionEditor({
             const instructions = jsonField(question.instructions as JsonValue | undefined);
             const structuredInstructions = question.instructions !== undefined && question.instructions !== null && typeof question.instructions !== "string";
             return (
-              <section key={id} className="min-w-0 border-t border-border pt-4" aria-label={t("Question {id}", { id })}>
+              <section key={index} className="min-w-0 border-t border-border pt-4" aria-label={t("Question {id}", { id })}>
                 <div className="flex flex-wrap items-start gap-2">
                   <span className="mt-2 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-xs text-foreground">{String(index + 1).padStart(2, "0")}</span>
                   <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[minmax(0,1fr)_130px]">
@@ -250,7 +253,7 @@ export function WorkbenchQuestionEditor({
                     </div>
                     <div className="flex flex-col gap-3">
                       {orderedEntries(criteria).map(([optionId, description], optionIndex) => (
-                        <div key={optionId} className="grid min-w-0 gap-2">
+                        <div key={optionIndex} className="grid min-w-0 gap-2">
                           <Input aria-label={t("Question {id} option {option} ID", { id, option: optionId })} value={optionId} onChange={(event) => renameOption(id, question, optionId, event.target.value)} className="w-full bg-background font-mono text-sm shadow-none" />
                           <div className="flex min-w-0 gap-2">
                             <Input aria-label={t("Question {id} option {option} description", { id, option: optionId })} value={jsonField(description)} onChange={(event) => changeOptionValue(id, question, optionId, event.target.value)} className="min-w-0 flex-1 bg-background text-sm shadow-none" placeholder={t("Option description (optional)")} />

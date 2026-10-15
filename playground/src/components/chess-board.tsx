@@ -1,6 +1,7 @@
 "use client";
 
 import type { Chess, Square } from "chess.js";
+import { useWorkbenchLocale } from "@/components/workbench-locale";
 
 const GLYPH: Record<string, string> = { wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙", bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟" };
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -14,11 +15,12 @@ export function ChessBoard({ chess, selected, targets, lastMove, flipped, onSqua
   onSquare: (sq: Square) => void;
   disabled: boolean;
 }) {
+  const { t } = useWorkbenchLocale();
   const board = chess.board();
   const ranks = flipped ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0]; // board()[0] is rank 8
   const files = flipped ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
   return (
-    <div className="grid aspect-square w-full max-w-[34rem] grid-cols-8 overflow-hidden rounded-md border border-border" role="grid" aria-label="Chess board">
+    <div className="grid aspect-square w-full max-w-[34rem] grid-cols-8 overflow-hidden rounded-md border border-border" role="grid" aria-label={t("Chess board")}>
       {ranks.map((r) =>
         files.map((f) => {
           const sq = `${FILES[f]}${8 - (7 - r)}` as Square;
@@ -28,7 +30,7 @@ export function ChessBoard({ chess, selected, targets, lastMove, flipped, onSqua
           const isTarget = targets.has(sq);
           const isLast = lastMove?.from === sq || lastMove?.to === sq;
           return (
-            <button key={sq} type="button" onClick={() => onSquare(sq)} disabled={disabled} aria-label={`${sq}${piece ? ` ${piece.color === "w" ? "white" : "black"} ${piece.type}` : ""}`}
+            <button key={sq} type="button" onClick={() => onSquare(sq)} disabled={disabled} aria-label={`${sq}${piece ? ` ${t(piece.color === "w" ? "White" : "Black")} ${piece.type}` : ""}`}
               className={`relative flex aspect-square items-center justify-center text-[clamp(1.25rem,4.2vw,2.4rem)] leading-none outline-none transition-colors
                 ${dark ? "bg-muted" : "bg-background"}
                 ${isLast ? "bg-foreground/10" : ""}

@@ -138,3 +138,24 @@ export function resultText(chess: Chess): string | undefined {
   if (chess.isDrawByFiftyMoves()) return "½-½ (fifty-move rule)";
   return "½-½ (draw)";
 }
+
+// Terminal reasons are a finite part of the canonical stored result "score (reason)".
+// Display may localize the reason, but storage, requests and exports keep the canonical string.
+export const RESULT_REASONS = ["checkmate", "stalemate", "repetition", "insufficient material", "fifty-move rule", "draw"] as const;
+export type ResultReason = (typeof RESULT_REASONS)[number];
+
+const RESULT_PATTERN = /^(1-0|0-1|½-½) \(([^()]+)\)$/;
+
+// Splits a canonical stored result into its score and a known reason. Older, imported or
+// unknown strings return null so display can fall back to the original content verbatim.
+export function parseResult(result: string): { score: string; reason: ResultReason } | null {
+  const match = RESULT_PATTERN.exec(result);
+  if (!match || !(RESULT_REASONS as readonly string[]).includes(match[2])) return null;
+  return { score: match[1], reason: match[2] as ResultReason };
+}
+
+// Render-time display: localize the known reason and keep the canonical score notation.
+export function formatResult(result: string, translateReason: (reason: ResultReason) => string): string {
+  const parsed = parseResult(result);
+  return parsed ? `${parsed.score} (${translateReason(parsed.reason)})` : result;
+}

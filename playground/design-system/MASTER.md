@@ -88,3 +88,5 @@ Desktop Run keeps input and results side by side from the `xl` breakpoint. Narro
 ## Components
 
 Run, Task library, History, Classic, and Chess use these tokens through `globals.css` and the shared button, input, and textarea primitives. Workbench handlers, storage, and API calls are unchanged.
+
+The Model summary opens a fixed overlay anchored to the control. Opening it must not change header height or shift page content. Escape and outside click close it; Escape returns focus to the summary. Dynamic question and option editors keep row identity while an ID changes, so typing does not drop focus.

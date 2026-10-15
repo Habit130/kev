@@ -1,13 +1,17 @@
+"use client";
+
+import { useWorkbenchLocale } from "@/components/workbench-locale";
 import type { Answer, Question } from "@/lib/kev";
 
 // One shared lane layout for every bar on the page: label | track | value.
 // Only the fill length varies between rows, so lengths are comparable across cards.
 function Bar({ label, p, top, delta, mono }: { label: string; p: number; top: boolean; delta?: number; mono?: boolean }) {
+  const { t } = useWorkbenchLocale();
   const showDelta = delta !== undefined && Math.abs(delta) >= 0.01;
   return (
     <div className="grid gap-1 text-sm leading-5">
       <div className="flex items-baseline justify-between gap-3">
-        <span className={`min-w-0 break-words ${mono ? "font-mono" : ""} ${top ? "font-medium text-foreground" : "text-foreground"}`}>{label}{top ? " · shown" : ""}</span>
+        <span className={`min-w-0 break-words ${mono ? "font-mono" : ""} ${top ? "font-medium text-foreground" : "text-foreground"}`}>{label}{top ? ` · ${t("shown")}` : ""}</span>
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
           <span>{p.toFixed(2)}</span>
           {showDelta && <span className="ml-1">{delta > 0 ? "+" : ""}{delta.toFixed(2)}</span>}
@@ -26,15 +30,16 @@ function instructionText(q?: Question) {
 }
 
 export function AnswerCard({ id, question, answer, compare }: { id: string; question?: Question; answer: Answer; compare?: Answer }) {
+  const { t, number } = useWorkbenchLocale();
   const instr = instructionText(question);
   const confidence = "confidence" in answer ? answer.confidence : undefined;
   const headline =
-    answer.type === "noul" ? (answer.noul >= 0.5 ? "yes" : "no")
+    answer.type === "noul" ? (answer.noul >= 0.5 ? t("yes") : t("no"))
     : answer.type === "choice" ? answer.choice
-    : `${answer.score.toFixed(2)} of ${Object.keys(answer.legend).length - 1}`;
+    : `${number(answer.score, 2)} ${t("of {max}", { max: number(Object.keys(answer.legend).length - 1) })}`;
   const detail =
-    answer.type === "noul" ? `p(yes) ${answer.noul.toFixed(2)}`
-    : `confidence ${confidence!.toFixed(2)}`;
+    answer.type === "noul" ? `${t("p(yes)")} ${number(answer.noul, 2)}`
+    : t("confidence {value}", { value: number(confidence ?? 0, 2) });
 
   return (
     <section aria-labelledby={`q-${id}`} className="grid gap-3 border-t border-border py-3 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-6">
@@ -53,8 +58,8 @@ export function AnswerCard({ id, question, answer, compare }: { id: string; ques
       <div className="flex min-w-0 flex-col justify-center">
         {answer.type === "noul" && (
           <>
-            <Bar label="yes" p={answer.noul} top={answer.noul >= 0.5} delta={compare?.type === "noul" ? answer.noul - compare.noul : undefined} />
-            <Bar label="no" p={1 - answer.noul} top={answer.noul < 0.5} />
+            <Bar label={t("yes")} p={answer.noul} top={answer.noul >= 0.5} delta={compare?.type === "noul" ? answer.noul - compare.noul : undefined} />
+            <Bar label={t("no")} p={1 - answer.noul} top={answer.noul < 0.5} />
           </>
         )}
         {answer.type === "choice" &&

@@ -29,11 +29,25 @@ function ProbabilityBar({ label, probability, selected }: { label: string; proba
   );
 }
 
-function Answer({ id, answer }: { id: string; answer: JsonValue }) {
+function renderedValue(value: JsonValue | undefined): string {
+  if (value === undefined || value === null || value === "") return "";
+  return typeof value === "string" ? value : stringifyJson(value);
+}
+
+function questionText(question: JsonValue | undefined, key: string): string {
+  if (!isJsonObject(question)) return "";
+  return renderedValue(question[key] as JsonValue | undefined);
+}
+
+function Answer({ id, answer, question }: { id: string; answer: JsonValue; question?: JsonValue }) {
   const { t, number } = useWorkbenchLocale();
   if (!isJsonObject(answer) || typeof answer.type !== "string") return null;
   const probabilities = isJsonObject(answer.probabilities) ? answer.probabilities : null;
   const confidence = numberValue(answer.confidence);
+  const instructions = questionText(question, "instructions");
+  const criteria = isJsonObject(question) && isJsonObject(question.criteria) ? question.criteria : null;
+  const yesCriterion = criteria ? renderedValue(criteria.true as JsonValue | undefined) : "";
+  const yesRefers = yesCriterion || instructions;
   if (answer.type === "choice") {
     const choice = typeof answer.choice === "string" ? answer.choice : "—";
     return (
@@ -46,6 +60,8 @@ function Answer({ id, answer }: { id: string; answer: JsonValue }) {
           {confidence !== null && <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs tabular-nums">{t("confidence")} {number(confidence, 3)}</span>}
         </div>
         {probabilities && <div className="mt-4 flex flex-col gap-2">{orderedEntries(probabilities).map(([key, value]) => numberValue(value) === null ? null : <ProbabilityBar key={key} label={key} probability={numberValue(value)!} selected={key === choice} />)}</div>}
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("This choice is only among the options configured for this question.")} {t("Confidence is the model's reported confidence, not guaranteed accuracy.")}</p>
+        {instructions && <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">{t("Instructions: {text}", { text: instructions })}</p>}
       </article>
     );
   }
@@ -65,6 +81,8 @@ function Answer({ id, answer }: { id: string; answer: JsonValue }) {
           <ProbabilityBar label={t("Yes")} probability={yes} selected={yes >= 0.5} />
           <ProbabilityBar label={t("No")} probability={1 - yes} selected={yes < 0.5} />
         </div>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("Yes probability is the model's p(yes), from 0 to 1. It is not a percentage and not guaranteed accuracy.")} {t("No is the complement of that yes probability.")}</p>
+        {yesRefers && <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">{t("Yes refers to: {text}", { text: yesRefers })}</p>}
       </article>
     );
   }
@@ -82,6 +100,8 @@ function Answer({ id, answer }: { id: string; answer: JsonValue }) {
           {confidence !== null && <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs tabular-nums">{t("confidence")} {number(confidence, 3)}</span>}
         </div>
         {probabilities && <div className="mt-4 flex flex-col gap-2">{orderedEntries(probabilities).map(([key, value]) => numberValue(value) === null ? null : <ProbabilityBar key={key} label={`${key}${legend && typeof legend[key] === "string" ? ` · ${legend[key]}` : ""}`} probability={numberValue(value)!} selected={false} />)}</div>}
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("Expected level is a position on the ordered range 0 to {max}, not a percentage.", { max: number(Math.max((probabilities ? orderedEntries(probabilities).length : legend ? Object.keys(legend).length : 1) - 1, 0)) })} {t("Confidence is the model's reported confidence, not guaranteed accuracy.")}</p>
+        {instructions && <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">{t("Instructions: {text}", { text: instructions })}</p>}
       </article>
     );
   }
@@ -161,8 +181,9 @@ export function WorkbenchResults({ record, busy, error }: { record: HistoryRecor
             <p className="break-all"><span className="font-medium text-foreground">{t("Base")}</span> · {identity?.base.source ?? t("Unknown")} · {identity?.base.revision ?? t("pin unavailable")}</p>
             <p className="break-words">{t("Actual runtime")} · {identity?.backend ?? t("unknown")} · {identity?.dtype ?? t("unknown")} · {identity?.device ?? t("unknown")}</p>
           </details>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("Only the questions configured for this submitted task are shown.")}</p>
           <div className="mt-3 flex flex-col gap-2.5">
-            {orderedEntries(answers).map(([id, answer]) => <Answer key={id} id={id} answer={answer} />)}
+            {orderedEntries(answers).map(([id, answer]) => <Answer key={id} id={id} answer={answer} question={record.questions[id]} />)}
           </div>
           {showRaw && (
             <section className="mt-4 rounded-lg border border-border p-3" aria-label={t("Raw request and response")}>
