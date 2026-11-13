@@ -1,7 +1,7 @@
 # Kev technical reference
 
 This reference preserves the technical instructions formerly loaded from root AGENTS.
-Root `AGENTS.md`, `CONTEXT.md`, and `docs/agents/delivery.md` own this fork's authority
+Root `AGENTS.md`, `CONTEXT.md`, and the role files in `docs/agents/` own this fork's authority
 and delivery policy. Resource names and release records below describe upstream work;
 they do not grant access, spending, publication, or deletion permission.
 

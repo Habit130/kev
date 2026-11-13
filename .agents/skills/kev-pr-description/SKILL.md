@@ -5,10 +5,10 @@ description: Write a Kev pull request title and body that teaches the reader why
 
 # Writing a Kev pull request
 
-Root `AGENTS.md` and `docs/agents/delivery.md` own this fork's delivery requirements.
-Use an English Conventional Commit title and the Motivation, Changes, Verification
-sections, with `Closes #<issue>` and the full evidence matrix. Historical examples below
-retain their original headings and subjects; they are not the current delivery template.
+Root `AGENTS.md` and `docs/agents/builder.md` own this fork's delivery requirements, and
+`.github/PULL_REQUEST_TEMPLATE.md` owns the PR body's shape. Use an English Conventional
+Commit title. Historical examples below retain their original headings and subjects; they
+are not the current delivery template.
 
 A Kev PR is read by three people: the reviewer today, someone reading `git log` next year to learn why a number changed,
 and a reader who is not an ML researcher (an engineer integrating the API, a student, a curious normie). Write for the

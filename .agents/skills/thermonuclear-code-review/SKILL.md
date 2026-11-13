@@ -6,10 +6,10 @@ description: Extremely strict structural review of a Kev branch or PR (code-judo
 # Thermonuclear review, Kev edition
 
 This skill supplies structural observations within the frozen issue's diff and directly
-affected callers. Root `AGENTS.md` and `docs/agents/delivery.md` own blocking severity.
-Style, decomposition preferences, optional refactors, and stronger-than-contract tests
-are P2/P3 follow-up unless primary evidence establishes an introduced P0/P1. Review does
-not authorize edits, scope expansion, agent merge, or an Acceptance decision.
+affected callers. Root `AGENTS.md`'s Code Review Rules own what blocks a merge.
+Style, decomposition preferences, optional refactors, and stronger-than-ticket tests
+are Nits unless primary evidence establishes an introduced Important finding. Review does
+not authorize edits, scope expansion, agent merge, or a Reviewer's verdict.
 
 A review for implementation quality, not correctness: abstraction quality, maintainability, codebase health. Behaviour
 is assumed to be checked elsewhere (`kev-verify`). Be ambitious: do not stop at local cleanups. Look for the "code

@@ -2,10 +2,10 @@
 
 ## Authority in this fork
 
-Read root `AGENTS.md`, `CONTEXT.md`, and `docs/agents/delivery.md` first. This runbook
+Read root `AGENTS.md` and `CONTEXT.md` first. This runbook
 retains upstream research methods; it grants no access to an upstream author's accounts,
 budget, Hub/Space, private data, or knowledge graph. habit confirms a task-specific budget,
-resources, scope, and registered research confirmation before Execution runs them.
+resources, scope, and registered research confirmation before a Builder runs them.
 Orchestration writes contracts/governance only, never model or infrastructure product code.
 Delivery Acceptance is a fresh contract review, not a research confirmation read.
 

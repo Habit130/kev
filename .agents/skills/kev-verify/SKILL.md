@@ -5,8 +5,8 @@ description: Verify a Kev change has no regression and prepare an issue-scoped P
 
 # Verify and ship a Kev change
 
-Read root `AGENTS.md` and `docs/agents/delivery.md` for the frozen issue contract and
-authority. Execution verifies the affected paths; Orchestration writes governance only.
+Read root `AGENTS.md` and `docs/agents/builder.md` for the frozen ticket and authority.
+The Builder verifies the affected paths.
 Model downloads, servers, cloud jobs, and publication need explicit task authorization
 and resource allocation. A governance-only diff does not require model or training runs.
 
