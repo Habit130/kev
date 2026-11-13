@@ -229,8 +229,9 @@ change introduces it on a supported path:
 ### Shared state
 
 - Parallel Builders use a separate worktree per ticket, and a PR has one active writer.
-- Before use, allocate exclusive ownership of each applicable GPU/Metal workload,
-  model-server process, listening port, mutable environment and output directory.
+- Before dispatch, allocate exclusive ownership of each applicable GPU/Metal workload,
+  model-server process, listening port, mutable environment and output directory. A session
+  that finds a resource it needs unallocated stops that use and asks, before using it.
 - Cloud work also allocates the confirmed account or app, study and run names, mutable
   volume paths, watcher and pull ownership, and the spend budget. Existing research leases
   remain mandatory.
@@ -257,4 +258,6 @@ Load only the rows the task triggers.
 
 `PLAN.md`, the model cards and the committed reports own inherited research evidence, not
 habit's present authorization or account resources. Delivery review and research
-confirmation are different things; never use one term for the other.
+confirmation are different things; never use one term for the other. Flag a conflict with an
+accepted ADR or a frozen ticket instead of silently overriding it. Unknown non-blocking
+domain detail stays omitted until it is established.
