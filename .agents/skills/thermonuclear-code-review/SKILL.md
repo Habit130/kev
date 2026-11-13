@@ -5,11 +5,11 @@ description: Extremely strict structural review of a Kev branch or PR (code-judo
 
 # Thermonuclear review, Kev edition
 
-This skill supplies structural observations within the frozen issue's diff and directly
-affected callers. Root `AGENTS.md` and `docs/agents/delivery.md` own blocking severity.
-Style, decomposition preferences, optional refactors, and stronger-than-contract tests
-are P2/P3 follow-up unless primary evidence establishes an introduced P0/P1. Review does
-not authorize edits, scope expansion, agent merge, or an Acceptance decision.
+This skill supplies structural observations within the frozen ticket's diff and directly
+affected callers. Root `AGENTS.md`'s Code Review Rules own what blocks a merge.
+Style, decomposition preferences, optional refactors, and stronger-than-ticket tests
+are Nits unless primary evidence establishes an introduced Important finding. Review does
+not authorize edits, scope expansion, agent merge, or a Reviewer's verdict.
 
 A review for implementation quality, not correctness: abstraction quality, maintainability, codebase health. Behaviour
 is assumed to be checked elsewhere (`kev-verify`). Be ambitious: do not stop at local cleanups. Look for the "code
@@ -61,8 +61,8 @@ have; can we reuse the canonical one?", "there is a code-judo move here; can we 
 Describe structural quality independently of behavior checks. Look for structural regressions,
 missed simplifications, file-size growth, scattered branching, hidden assumptions, and
 boundary leaks or canonical-helper duplication. These observations are not presumptive
-merge blockers. State trigger, impact, primary evidence, and a safe path before assigning
-P0/P1; independent Acceptance confirms that severity. Otherwise leave actionable,
+merge blockers. State trigger, impact, primary evidence, and a safe path before calling a
+finding Important (`AGENTS.md`, Code Review Rules). Otherwise leave actionable,
 non-blocking feedback for a separately scoped follow-up. Say plainly when something is fine.
 
 ## How to run it here

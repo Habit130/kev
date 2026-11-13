@@ -5,7 +5,7 @@ description: Launch, monitor and pull Kev training studies, untrained-base probe
 
 # Kev on Modal study workflow
 
-Root `AGENTS.md` and the frozen issue own authorization. Confirm habit's account, budget,
+Root `AGENTS.md` and the frozen ticket own authorization. Confirm habit's account, budget,
 target app, study/run names, volume paths, and exclusive watcher/pull ownership before
 cloud work. Upstream names below are reference defaults, not resources owned by this fork.
 Model/endpoint publication and any checkpoint, snapshot, volume, or app deletion need

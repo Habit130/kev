@@ -2,14 +2,14 @@
 
 ## Authority in this fork
 
-Read root `AGENTS.md`, `CONTEXT.md`, and `docs/agents/delivery.md` first. This runbook
+Read root `AGENTS.md` and `CONTEXT.md` first. This runbook
 retains upstream research methods; it grants no access to an upstream author's accounts,
 budget, Hub/Space, private data, or knowledge graph. habit confirms a task-specific budget,
-resources, scope, and registered research confirmation before Execution runs them.
-Orchestration writes contracts/governance only, never model or infrastructure product code.
-Delivery Acceptance is a fresh contract review, not a research confirmation read.
+resources, scope, and registered research confirmation before a Builder runs them.
+A Planner writes tickets and governance documents only, never model or infrastructure
+product code. A delivery's review is a review of its ticket, not a research confirmation read.
 
-Use a frozen issue, a feature branch from latest `origin/main`, one writer, and allocated
+Use a frozen ticket, a feature branch from latest `origin/main`, one writer, and allocated
 shared state. No stacked PRs, agent merge, auto-merge, or force-push. Publication,
 deployment, deletions, external access, and credential provisioning remain explicit habit
 decisions. Old references to Jared's approval describe upstream ownership, not authority
@@ -141,10 +141,10 @@ caffeinate -i nohup uv run python -m kev.rounds watch experiments/rounds/r<N>.js
 
 ## 5. What a session may and may not touch
 
-Within its frozen issue, Execution may write specs, plans and PLAN.md sections, build new
+Within its frozen ticket, a Builder may write specs, plans and PLAN.md sections, build new
 frozen data under new directories, launch authorized studies and reads through `modal_app.py`,
 and change scripts/infrastructure. Product changes use their own verified PR before a round
-depends on them. Orchestration does not implement those changes.
+depends on them. A Planner does not implement those changes.
 
 May not without habit's explicit scope/resource authorization, and the upstream owner's
 permission when the target is upstream-owned:
