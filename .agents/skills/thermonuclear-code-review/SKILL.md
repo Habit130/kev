@@ -5,7 +5,7 @@ description: Extremely strict structural review of a Kev branch or PR (code-judo
 
 # Thermonuclear review, Kev edition
 
-This skill supplies structural observations within the frozen issue's diff and directly
+This skill supplies structural observations within the frozen ticket's diff and directly
 affected callers. Root `AGENTS.md`'s Code Review Rules own what blocks a merge.
 Style, decomposition preferences, optional refactors, and stronger-than-ticket tests
 are Nits unless primary evidence establishes an introduced Important finding. Review does
@@ -61,8 +61,8 @@ have; can we reuse the canonical one?", "there is a code-judo move here; can we 
 Describe structural quality independently of behavior checks. Look for structural regressions,
 missed simplifications, file-size growth, scattered branching, hidden assumptions, and
 boundary leaks or canonical-helper duplication. These observations are not presumptive
-merge blockers. State trigger, impact, primary evidence, and a safe path before assigning
-P0/P1; independent Acceptance confirms that severity. Otherwise leave actionable,
+merge blockers. State trigger, impact, primary evidence, and a safe path before calling a
+finding Important (`AGENTS.md`, Code Review Rules). Otherwise leave actionable,
 non-blocking feedback for a separately scoped follow-up. Say plainly when something is fine.
 
 ## How to run it here

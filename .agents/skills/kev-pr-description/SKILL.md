@@ -147,5 +147,5 @@ One sentence of problem, one of reason for the bound. That is the whole body.
 - Is the decision rule written before the result?
 - Does "Test plan" carry evidence a reviewer could re-run?
 - Did you cut every sentence that only repeats the diff?
-- Does Verification cover every frozen BASE and ticket criterion, actual Codex status,
-  and any independent Acceptance handoff, without claiming unrun checks passed?
+- Does the evidence comment cover every acceptance criterion of the ticket and each review's
+  actual state, without claiming unrun checks passed?

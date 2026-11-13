@@ -112,14 +112,15 @@ Modal with the real base (`kev-modal-study`), not here.
 
 ## 5. Ship
 
-- One frozen issue, feature branch from latest `origin/main`, PR, and active writer per
-  delivery. Parallel issues use separate worktrees, never stacked PRs.
-- Write the English Conventional Commit title and body with `kev-pr-description`. Put
-  re-runnable commands, measured evidence, and the complete criterion matrix in Verification.
+- One frozen ticket, feature branch from latest `origin/main`, PR, and active writer per
+  delivery. Parallel tickets use separate worktrees, never stacked PRs.
+- Write the English Conventional Commit title with `kev-pr-description`; the PR body follows
+  `.github/PULL_REQUEST_TEMPLATE.md`. Put re-runnable commands and measured evidence in the
+  evidence comment (`docs/agents/review.md`).
 - Use `thermonuclear-code-review` for structural review. It has caught dropped imports and
-  doubled temperatures, but P2/P3 structure suggestions are non-blocking follow-up. Do not
-  broaden the frozen contract or spawn helpers without the session's delegation authority.
-- Request `@codex review`, record the actual result, and follow the conditional independent
-  Acceptance protocol. Leave issue and PR open; habit alone squash-merges. Never enable
+  doubled temperatures, but its structure suggestions are Nits, not merge blockers. Do not
+  broaden the frozen ticket or spawn helpers without the session's delegation authority.
+- Reviews, review bot requests and the merge handoff follow `docs/agents/builder.md` and
+  `docs/agents/review.md`. Leave the PR open; habit alone squash-merges. Never enable
   auto-merge, force-push, or run an agent merge/rebase chain from an inherited example.
 - Never commit regenerated `runs/leaderboard.*` or frozen `evals/` files as part of a refactor.
